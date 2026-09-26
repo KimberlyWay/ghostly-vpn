@@ -100,7 +100,10 @@ fun AuroraBackground(energy: Float, modifier: Modifier = Modifier, content: @Com
             val py = -par.y * 34.dp.toPx() * remote.parallax
             // Stage: the aurora breathes with the bass, sinks with dark songs, blazes on a drop.
             val sa = stage?.a
-            val glow = remote.aurora * (1f + (sa?.let { it.bass * 0.9f + it.beat * 0.35f + it.drop * 1.6f - it.darkness * 0.55f } ?: 0f)).coerceAtLeast(0.25f)
+            // Darkness dominates: bass/beat only brighten bright songs, a drop flares less in a dark one.
+            val glow = remote.aurora * (1f + (sa?.let {
+                (it.bass * 0.6f + it.beat * 0.2f) * (1f - it.darkness) + it.drop * 1.2f * (1f - 0.6f * it.darkness) - it.darkness * 0.9f
+            } ?: 0f)).coerceAtLeast(0.12f)
             fun blob(cx0: Float, cy0: Float, r0: Float, color: Color, alpha0: Float) {
                 val cx = cx0 + px; val cy = cy0 + py
                 val r = r0 * (1f + (sa?.let { it.bass * 0.10f + it.drop * 0.18f } ?: 0f))

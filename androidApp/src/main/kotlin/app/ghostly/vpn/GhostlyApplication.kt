@@ -102,38 +102,30 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
     @Volatile var hapticView: java.lang.ref.WeakReference<android.view.View>? = null
 
     override fun haptic() {
-        // 1) The window's own haptic feedback: same engine as the keyboard and system buttons, felt on
-        //    every ROM (a bare short vibrator pulse is swallowed by some — MIUI, One UI).
-        val view = hapticView?.get()
-        if (view != null) {
-            val run = Runnable {
-                @Suppress("DEPRECATION")
-                val ok = view.performHapticFeedback(
-                    if (Build.VERSION.SDK_INT >= 23) android.view.HapticFeedbackConstants.CONTEXT_CLICK
-                    else android.view.HapticFeedbackConstants.VIRTUAL_KEY,
-                    android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
-                )
-                if (!ok) vibrateClick()
-            }
-            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else view.post(run)
-            return
+        // The motor's own "click" first — it plays on every ROM with a vibrator (Nothing OS, MIUI, One UI).
+        // (0.2.2 asked the window for CONTEXT_CLICK, a mouse-context haptic some ROMs "perform" silently.)
+        if (vibrateClick()) return
+        val view = hapticView?.get() ?: return
+        val run = Runnable {
+            @Suppress("DEPRECATION")
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY, android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING)
         }
-        vibrateClick()
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else view.post(run)
     }
 
-    /** 2) Fallback: the motor's predefined "click", or a 40 ms pulse on old Android. */
-    private fun vibrateClick() {
+    /** The motor's predefined "click" (a 40 ms pulse on old Android); false when there is no vibrator. */
+    private fun vibrateClick(): Boolean {
         val vibrator = if (Build.VERSION.SDK_INT >= 31) {
             context.getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
             @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
         }
-        if (vibrator == null || !vibrator.hasVibrator()) return
-        runCatching {
+        if (vibrator == null || !vibrator.hasVibrator()) return false
+        return runCatching {
             val effect = if (Build.VERSION.SDK_INT >= 29) VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
             else VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE)
             vibrator.vibrate(effect)
-        }
+        }.isSuccess
     }
 
     override fun lanAddress(): String? = runCatching {

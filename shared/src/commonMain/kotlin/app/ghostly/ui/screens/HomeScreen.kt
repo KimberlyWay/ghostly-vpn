@@ -305,8 +305,8 @@ fun HomeHero(m: HomeModel, controller: GhostlyController, orbSize: Dp) {
             controller.toggle()
         }, size = orbSize, modifier = Modifier.orbHalo(m.orb),
             sing = { stage?.let { s -> val t = s.track.value; if (t != null && t.playing) (s.a.vocal * 1.4f).coerceIn(0f, 1f) else 0f } ?: 0f },
-            beat = { stage?.a?.beat ?: 0f },
-            flare = { stage?.a?.drop ?: 0f },
+            beat = { stage?.a?.let { it.beat * (1f - 0.6f * it.darkness) } ?: 0f },
+            flare = { stage?.a?.let { it.drop * (1f - 0.5f * it.darkness) } ?: 0f },
             music = { stage?.track?.value?.playing == true },
         )
         Spacer(Modifier.height(14.dp))

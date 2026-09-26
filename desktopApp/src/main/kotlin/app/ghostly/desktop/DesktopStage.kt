@@ -78,7 +78,9 @@ class DesktopStage(dataDir: String) : StageSource {
     @Synchronized
     override fun positionMs(): Long {
         val t = _track.value ?: return 0L
-        val p = clock.update(System.currentTimeMillis(), trackKey, basePos, advancing)
+        // Players report position late (and a line starts typing at its first letter), so lines ran a hair
+        // behind the voice: run the lyric clock a little ahead.
+        val p = clock.update(System.currentTimeMillis(), trackKey, basePos, advancing) + if (advancing) LYRIC_LEAD_MS else 0L
         return if (t.durationMs > 0) p.coerceIn(0, t.durationMs) else max(0, p)
     }
 
@@ -293,8 +295,9 @@ class DesktopStage(dataDir: String) : StageSource {
                 bpm > 0f && s.calm() > 0.5f && aggrAvg < 0.35f -> 0.25f
                 else -> 0f
             }
-            val darkTarget = (s.calm() * 0.6f + (1f - s.treble()) * 0.3f + slow - aggrAvg * 0.55f).coerceIn(0f, 1f)
-            dark = ema(dark, if (s.active()) darkTarget else 0.3f, 5f)
+            // Dark wins over light: a raised baseline, and only real aggression pulls the stage bright.
+            val darkTarget = (0.25f + s.calm() * 0.6f + (1f - s.treble()) * 0.35f + slow - aggrAvg * 0.45f).coerceIn(0f, 1f)
+            dark = ema(dark, if (s.active()) darkTarget else 0.45f, 5f)
             // Calm songs move calmly: the bass swells slowly and kicks barely jolt the stage.
             bassOut = ema(bassOut, s.bass(), 0.05f + 0.55f * dark)
             beatOut = s.beat() * (1f - 0.7f * dark)
@@ -312,6 +315,7 @@ class DesktopStage(dataDir: String) : StageSource {
 
     private companion object {
         const val POLL_MS = 1200L
+        const val LYRIC_LEAD_MS = 320L
     }
 }
 
