@@ -126,6 +126,10 @@ class GhostlyController(
     private var userWantsConnection = false
 
     init {
+        // 0.2.1 switched everyone to mihomo; Xray is the default again — move back once, later choices stick.
+        if (!_settings.value.coreXrayRestored) {
+            updateSettings { it.copy(core = app.ghostly.core.model.CoreType.XRAY, coreXrayRestored = true) }
+        }
         (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.profileOf = ::profileOf
         app.ghostly.core.vpn.Probe.method = _settings.value.pingMethod
         // A kill switch left engaged by a crash must never keep the internet blocked.
@@ -167,7 +171,7 @@ class GhostlyController(
                         runCatching { updater.install(offer) }
                     }
                 }
-                kotlinx.coroutines.delay(3_600_000L)
+                kotlinx.coroutines.delay(2 * 60_000L)
             }
         }
         scope.launch(Dispatchers.IO) {

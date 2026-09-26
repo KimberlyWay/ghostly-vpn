@@ -99,17 +99,40 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
         context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    /** The visible activity's window, for system haptics (set by MainActivity). */
+    @Volatile var hapticView: java.lang.ref.WeakReference<android.view.View>? = null
+
     override fun haptic() {
+        // 1) The window's own haptic feedback: same engine as the keyboard and system buttons, felt on
+        //    every ROM (a bare short vibrator pulse is swallowed by some — MIUI, One UI).
+        val view = hapticView?.get()
+        if (view != null) {
+            val run = Runnable {
+                @Suppress("DEPRECATION")
+                val ok = view.performHapticFeedback(
+                    if (Build.VERSION.SDK_INT >= 23) android.view.HapticFeedbackConstants.CONTEXT_CLICK
+                    else android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+                    android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
+                )
+                if (!ok) vibrateClick()
+            }
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else view.post(run)
+            return
+        }
+        vibrateClick()
+    }
+
+    /** 2) Fallback: the motor's predefined "click", or a 40 ms pulse on old Android. */
+    private fun vibrateClick() {
         val vibrator = if (Build.VERSION.SDK_INT >= 31) {
-            context.getSystemService(VibratorManager::class.java).defaultVibrator
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
             @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
         }
         if (vibrator == null || !vibrator.hasVibrator()) return
         runCatching {
-            // EFFECT_TICK is so faint that many ROMs (MIUI, One UI) skip it — a short firm pulse is felt everywhere.
-            val effect = if (vibrator.hasAmplitudeControl()) VibrationEffect.createOneShot(22, 170)
-            else VibrationEffect.createOneShot(22, VibrationEffect.DEFAULT_AMPLITUDE)
+            val effect = if (Build.VERSION.SDK_INT >= 29) VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+            else VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE)
             vibrator.vibrate(effect)
         }
     }

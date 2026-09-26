@@ -168,8 +168,8 @@ android {
         applicationId = "app.ghostly.vpn"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 11
-        versionName = "0.2.0"
+        versionCode = 13
+        versionName = "0.2.2"
     }
 
     signingConfigs {
