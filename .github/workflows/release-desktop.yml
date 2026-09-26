@@ -23,7 +23,7 @@ jobs:
           - os: macos-latest        # Apple Silicon
             kind: mac
             suffix: macOS-AppleSilicon
-          - os: macos-13            # Intel
+          - os: macos-15-intel      # Intel (macos-13 runners were retired)
             kind: mac
             suffix: macOS-Intel
           - os: ubuntu-22.04        # glibc old enough for most distros
