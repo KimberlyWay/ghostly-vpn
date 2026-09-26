@@ -106,7 +106,7 @@ private fun GroupHeader(g: ProxyGroupInfo, open: Boolean, testing: Boolean, pad:
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(g.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                FlagName(g.name, MaterialTheme.typography.titleSmall, Ghost.colors.ink, 12.dp, Modifier.weight(1f, fill = false))
                 Text("  " + typeLabel(g.type), style = MaterialTheme.typography.labelSmall, color = c.ink3, maxLines = 1)
             }
             val now = g.now
@@ -114,7 +114,7 @@ private fun GroupHeader(g: ProxyGroupInfo, open: Boolean, testing: Boolean, pad:
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (g.selectable) Icons.Rounded.SwapVert else Icons.Rounded.AutoAwesome, null, tint = c.accent, modifier = Modifier.size(12.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(now, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    FlagName(now, MaterialTheme.typography.bodySmall, c.ink2, 10.dp, Modifier.weight(1f, fill = false))
                     g.delays[now]?.let { Text("  " + delayText(it), style = MaterialTheme.typography.labelSmall, color = delayColor(it)) }
                 }
             }
@@ -145,10 +145,52 @@ private fun MemberRow(name: String, g: ProxyGroupInfo, pad: Dp, onClick: () -> U
             else Box(Modifier.size(6.dp).clip(CircleShape).background(c.ink3.copy(alpha = 0.5f)))
         }
         Spacer(Modifier.width(10.dp))
-        Text(name, style = MaterialTheme.typography.bodyMedium, color = if (chosen) c.ink else c.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        FlagName(name, MaterialTheme.typography.bodyMedium, if (chosen) c.ink else c.ink2, 12.dp, Modifier.weight(1f))
         if (nested) Text("группа", style = MaterialTheme.typography.labelSmall, color = c.ink3, modifier = Modifier.padding(horizontal = 6.dp))
         g.delays[name]?.let { Text(delayText(it), style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"), color = delayColor(it)) }
     }
+}
+
+/**
+ * A name with its flag emoji drawn as a flag (Windows has no flag glyphs: "🇱🇻" would show as "LV"),
+ * the rest as text — like the server rows.
+ */
+@Composable
+private fun FlagName(text: String, style: androidx.compose.ui.text.TextStyle, color: Color, flagHeight: Dp, modifier: Modifier = Modifier) {
+    val (flag, rest) = splitFlag(text)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (flag != null) {
+            app.ghostly.ui.components.FlagIcon(flag, flagHeight)
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(rest, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The first flag emoji (a regional-indicator pair) anywhere in [s], and [s] without it. */
+private fun splitFlag(s: String): Pair<String?, String> {
+    var i = 0
+    while (i + 3 < s.length) {
+        val a = codePointAt(s, i)
+        if (a in 0x1F1E6..0x1F1FF) {
+            val b = codePointAt(s, i + 2)
+            if (b in 0x1F1E6..0x1F1FF) {
+                val rest = (s.substring(0, i) + s.substring(i + 4)).replace(Regex(" {2,}"), " ").trim()
+                return s.substring(i, i + 4) to rest.ifEmpty { s }
+            }
+        }
+        i += if (s[i].isHighSurrogate()) 2 else 1
+    }
+    return null to s
+}
+
+private fun codePointAt(s: String, i: Int): Int {
+    val c = s[i]
+    if (c.isHighSurrogate() && i + 1 < s.length) {
+        val d = s[i + 1]
+        if (d.isLowSurrogate()) return ((c.code - 0xD800) shl 10) + (d.code - 0xDC00) + 0x10000
+    }
+    return c.code
 }
 
 private fun delayText(ms: Int) = if (ms <= 0) "нет" else "$ms мс"
