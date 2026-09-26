@@ -15,3 +15,12 @@ class FlagTest {
         assertNull(flagCode(null))
     }
 }
+
+class FlagPairTest {
+    @Test
+    fun findsFlagsAnywhere() {
+        val re = Regex("[\\x{1F1E6}-\\x{1F1FF}]{2}")
+        val name = "Amsterdam \uD83C\uDDF3\uD83C\uDDF1\uD83C\uDDE9\uD83C\uDDEA"
+        assertEquals(listOf("NL", "DE"), re.findAll(name).map { flagCode(it.value) }.toList())
+    }
+}

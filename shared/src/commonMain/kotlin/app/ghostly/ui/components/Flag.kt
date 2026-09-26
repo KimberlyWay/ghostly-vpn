@@ -3,6 +3,9 @@ package app.ghostly.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -54,25 +57,74 @@ private fun String.codePointAtCompat(i: Int): Int {
 @Composable
 fun FlagIcon(flag: String, height: Dp, modifier: Modifier = Modifier) {
     val code = flagCode(flag) ?: return
-    val width = height * 1.4f
+    FlagBox(code, modifier.size(height * 1.4f, height), height)
+}
+
+/** A flag filling [modifier]'s size; [height] only scales the corner radius and the badge text. */
+@Composable
+private fun FlagBox(code: String, modifier: Modifier, height: Dp) {
     val shape = RoundedCornerShape(height * 0.22f)
     val painter = FLAGS[code]
     if (painter == null) {
         // Unknown country: a small badge with the code, not two bare letters.
-        Box(
-            modifier.size(width, height).clip(shape).background(Ghost.colors.accent.copy(alpha = 0.22f)),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(modifier.clip(shape).background(Ghost.colors.accent.copy(alpha = 0.22f)), contentAlignment = Alignment.Center) {
             Text(code, fontSize = (height.value * 0.46f).sp, fontWeight = FontWeight.Bold, color = Ghost.colors.ink)
         }
         return
     }
-    Canvas(modifier.size(width, height).clip(shape)) {
+    Canvas(modifier.clip(shape)) {
         painter()
         // Soft top highlight and hairline edge so light flags don't melt into the glass.
         drawRect(Color.White.copy(alpha = 0.10f), size = Size(size.width, size.height * 0.45f))
         drawRect(Color.Black.copy(alpha = 0.18f), style = Stroke(1f))
     }
+}
+
+/** Two regional-indicator symbols anywhere in a string (start, end, several in a row). */
+private val FLAG_PAIR = Regex("[\\x{1F1E6}-\\x{1F1FF}]{2}")
+
+/**
+ * Text whose emoji flags (anywhere, any number) are replaced by drawn flags inline — on Windows the
+ * emoji font has no flags and shows "NL", "FI" instead.
+ */
+@Composable
+fun FlagText(
+    text: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = androidx.compose.material3.LocalTextStyle.current,
+    color: Color = Color.Unspecified,
+    maxLines: Int = Int.MAX_VALUE,
+    softWrap: Boolean = true,
+    overflow: androidx.compose.ui.text.style.TextOverflow = androidx.compose.ui.text.style.TextOverflow.Clip,
+) {
+    val matches = FLAG_PAIR.findAll(text).toList()
+    if (matches.isEmpty()) {
+        Text(text, modifier, color = color, style = style, maxLines = maxLines, softWrap = softWrap, overflow = overflow)
+        return
+    }
+    val codes = matches.mapNotNull { flagCode(it.value) }.toSet()
+    val annotated = androidx.compose.ui.text.buildAnnotatedString {
+        var last = 0
+        for (m in matches) {
+            append(text.substring(last, m.range.first))
+            val code = flagCode(m.value)
+            if (code != null) appendInlineContent("flag:$code", code) else append(m.value)
+            last = m.range.last + 1
+        }
+        append(text.substring(last))
+    }
+    val inline = codes.associate { code ->
+        "flag:$code" to androidx.compose.foundation.text.InlineTextContent(
+            androidx.compose.ui.text.Placeholder(
+                width = androidx.compose.ui.unit.TextUnit(1.45f, androidx.compose.ui.unit.TextUnitType.Em),
+                height = androidx.compose.ui.unit.TextUnit(0.95f, androidx.compose.ui.unit.TextUnitType.Em),
+                placeholderVerticalAlign = androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter,
+            ),
+        ) {
+            FlagBox(code, Modifier.fillMaxSize().padding(horizontal = androidx.compose.ui.unit.Dp(1.5f)), androidx.compose.ui.unit.Dp(12f))
+        }
+    }
+    Text(annotated, modifier, color = color, style = style, maxLines = maxLines, softWrap = softWrap, overflow = overflow, inlineContent = inline)
 }
 
 private typealias FlagPainter = DrawScope.() -> Unit

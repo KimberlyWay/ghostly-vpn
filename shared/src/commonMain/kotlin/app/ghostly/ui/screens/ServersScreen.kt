@@ -265,7 +265,7 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
         Icon(Icons.Rounded.ExpandMore, null, tint = c.ink3, modifier = Modifier.size(20.dp).rotate(arrow))
         Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
-            Text(profile.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            app.ghostly.ui.components.FlagText(profile.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val info = profile.info
             val parts = buildList {
                 add("${profile.servers.size} ${Format.plural(profile.servers.size.toLong(), "сервер", "сервера", "серверов")}")
@@ -321,7 +321,7 @@ private fun BestRow(server: Server, ms: Long?, onClick: () -> Unit) {
             val t = server.title()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 t.flag?.let { app.ghostly.ui.components.FlagIcon(it, 11.dp); Spacer(Modifier.width(6.dp)) }
-                Text(listOfNotNull(t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                app.ghostly.ui.components.FlagText(listOfNotNull(t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         PingPill(ms, false)
@@ -372,9 +372,9 @@ private fun ServerRow(
             val t = server.title()
             Row(verticalAlignment = Alignment.Bottom) {
                 // The name stays whole; the variant ("Стабильный", "Резерв") is what gets ellipsized.
-                Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
+                app.ghostly.ui.components.FlagText(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
                 t.subtitle?.let {
-                    Text(" · $it", style = MaterialTheme.typography.bodyMedium.copy(color = c.ink2), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    app.ghostly.ui.components.FlagText(" · $it", style = MaterialTheme.typography.bodyMedium.copy(color = c.ink2), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 }
             }
             // One quiet line instead of coloured badges; the protocol is skipped when the name already says it.

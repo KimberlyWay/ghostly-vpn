@@ -152,7 +152,7 @@ private fun Sidebar(controller: GhostlyController, tab: Tab, onTab: (Tab) -> Uni
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.045f))
                     .border(1.dp, c.line, RoundedCornerShape(18.dp)).spotlight(c.accent, 140.dp).padding(14.dp),
             ) {
-                Text(profile.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                app.ghostly.ui.components.FlagText(profile.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(2.dp))
                 Text(
                     if (info.unlimitedTime) "Бессрочно" else Format.expiryPhrase(info.expire, GhostlyController.now()),
