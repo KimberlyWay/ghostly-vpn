@@ -46,7 +46,8 @@ class SubscriptionClient(private val platform: PlatformInfo) {
 
     /** For mihomo: providers match "clash"/"mihomo" in the User-Agent and send a Clash YAML with proxy groups. */
     val mihomoUserAgent: String
-        get() = "clash.meta/mihomo (Prizrak-Core; GhostlyVPN/${platform.appVersion}; ${platform.os})"
+        // No "GhostlyVPN" here: Ghostly's own server would answer that with its Xray JSON.
+        get() = "clash.meta/v1.19.31 mihomo/v1.19.31"
 
     suspend fun fetch(url: String, idPrefix: String, tunnelPort: Int? = null, mihomo: Boolean = false): ParsedSubscription = coroutineScope {
         data class Attempt(val url: String, val client: HttpClient, val delayMs: Long)
