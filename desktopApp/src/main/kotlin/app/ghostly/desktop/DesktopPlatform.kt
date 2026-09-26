@@ -133,6 +133,22 @@ class DesktopPlatform : PlatformInfo {
         }.getOrDefault(-1L)
     }
 
+    /** One system ping (ICMP): works without admin rights, unlike Java's isReachable on Windows. */
+    override suspend fun icmpPing(host: String, timeoutMs: Int): Long = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val cmd = when (hostOs) {
+                HostOs.WINDOWS -> listOf("ping", "-n", "1", "-w", "$timeoutMs", host)
+                HostOs.MACOS -> listOf("ping", "-c", "1", "-t", "${(timeoutMs / 1000).coerceAtLeast(1)}", host)
+                HostOs.LINUX -> listOf("ping", "-c", "1", "-W", "${(timeoutMs / 1000).coerceAtLeast(1)}", host)
+            }
+            val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            // Windows prints in the OEM code page (cp866 for Russian).
+            val out = p.inputStream.readAllBytes().toString(if (hostOs == HostOs.WINDOWS) charset("CP866") else Charsets.UTF_8)
+            if (!p.waitFor(timeoutMs + 2000L, java.util.concurrent.TimeUnit.MILLISECONDS)) p.destroyForcibly()
+            app.ghostly.core.vpn.Probe.parsePingOutput(out)
+        }.getOrDefault(-1L)
+    }
+
     /** Autostart entry: HKCU Run key / LaunchAgent / XDG autostart, launching minimized to tray. */
     override fun setStartOnBoot(enabled: Boolean) {
         val exe = ProcessHandle.current().info().command().orElse(null) ?: return

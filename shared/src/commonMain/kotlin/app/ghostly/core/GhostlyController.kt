@@ -119,6 +119,7 @@ class GhostlyController(
 
     init {
         (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.profileOf = ::profileOf
+        app.ghostly.core.vpn.Probe.method = _settings.value.pingMethod
         // A kill switch left engaged by a crash must never keep the internet blocked.
         platform.killSwitch?.takeIf { it.engaged }?.let { ks -> scope.launch(Dispatchers.IO) { ks.release() } }
         // Local proxy credentials: ghostly_xxxxxx + a random password, generated once.
@@ -409,6 +410,11 @@ class GhostlyController(
         val targets = servers.filter { !it.isAuto && it.id !in _pinging.value }
         if (targets.isEmpty()) return
         _pinging.update { it + targets.map { s -> s.id } }
+        val method = _settings.value.pingMethod
+        if (method == app.ghostly.core.model.PingMethod.TCP || method == app.ghostly.core.model.PingMethod.ICMP) {
+            scope.launch(Dispatchers.IO) { pingDirect(targets, method) }
+            return
+        }
         scope.launch(Dispatchers.IO) {
             val gate = Semaphore(24)
             targets.filter { it.protocol != "hysteria" && it.host != null && it.port > 0 }.map { s ->
@@ -430,6 +436,40 @@ class GhostlyController(
             _pinging.update { it - targets.map { s -> s.id }.toSet() }
             saveUi()
         }
+    }
+
+    /**
+     * TCP / ICMP methods: the result of the direct probe is final. Servers that can't be probed that
+     * way (UDP-only protocols for TCP, no host) fall back to the real ping through the core.
+     */
+    private suspend fun pingDirect(targets: List<Server>, method: app.ghostly.core.model.PingMethod) {
+        val udp = setOf("hysteria", "tuic", "wireguard", "hysteria2")
+        val (direct, viaCore) = targets.partition { s ->
+            s.host != null && (method == app.ghostly.core.model.PingMethod.ICMP || (s.port > 0 && s.protocol !in udp))
+        }
+        val gate = Semaphore(24)
+        kotlinx.coroutines.coroutineScope {
+            direct.forEach { s ->
+                launch {
+                    val ms = gate.withPermit {
+                        if (method == app.ghostly.core.model.PingMethod.ICMP) platform.icmpPing(s.host!!, 2500)
+                        else platform.tcpPing(s.host!!, s.port, 2500)
+                    }
+                    _pings.update { it + (s.id to Ping(ms, now())) }
+                    _pinging.update { it - s.id }
+                }
+            }
+            if (viaCore.isNotEmpty()) launch {
+                runCatching {
+                    backend.pingMany(viaCore, _settings.value.pingUrl) { id, ms ->
+                        _pings.update { it + (id to Ping(ms, now())) }
+                        _pinging.update { it - id }
+                    }
+                }
+            }
+        }
+        _pinging.update { it - targets.map { s -> s.id }.toSet() }
+        saveUi()
     }
 
     // ------------------------------------------------------------------ connection
@@ -697,6 +737,7 @@ class GhostlyController(
         val after = transform(before)
         if (after == before) return
         _settings.value = after
+        app.ghostly.core.vpn.Probe.method = after.pingMethod
         store.save(SETTINGS, AppSettings.serializer(), after)
         if (before.startOnBoot != after.startOnBoot) runCatching { platform.setStartOnBoot(after.startOnBoot) }
         // Providers send another format to mihomo (Clash YAML with groups): fetch subscriptions again.

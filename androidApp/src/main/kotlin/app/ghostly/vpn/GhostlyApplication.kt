@@ -127,6 +127,17 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
             .firstOrNull()
     }.getOrNull()
 
+    /** System ping (ICMP): /system/bin/ping works for apps without root. */
+    override suspend fun icmpPing(host: String, timeoutMs: Int): Long = withContext(Dispatchers.IO) {
+        runCatching {
+            val p = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "${(timeoutMs / 1000).coerceAtLeast(1)}", host)
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor()
+            app.ghostly.core.vpn.Probe.parsePingOutput(out)
+        }.getOrDefault(-1L)
+    }
+
     override fun isPortFree(port: Int, listen: String): Boolean = runCatching {
         java.net.ServerSocket().use { it.reuseAddress = false; it.bind(java.net.InetSocketAddress(listen, port)) }
         // 0.0.0.0 can bind next to another app's 127.0.0.1 listener on Windows — check loopback too.

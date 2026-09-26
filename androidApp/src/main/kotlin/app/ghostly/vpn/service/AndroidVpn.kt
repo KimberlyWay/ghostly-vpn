@@ -109,6 +109,7 @@ object AndroidVpn : VpnBackend {
 
     override suspend fun ping(server: Server, url: String): Long = withContext(Dispatchers.IO) {
         val config = XrayConfigBuilder.buildPing(server) ?: return@withContext -1L
+        if (app.ghostly.core.vpn.Probe.method == app.ghostly.core.model.PingMethod.PROXY_HEAD) return@withContext AndroidHttpProbe.viaXray(config, url)
         try {
             Libv2ray.measureOutboundDelay(JsonX.encodeToString(JsonObject.serializer(), config), url)
         } catch (_: Exception) {
@@ -120,6 +121,7 @@ object AndroidVpn : VpnBackend {
     @Volatile internal var liveCore: libv2ray.CoreController? = null
 
     override suspend fun healthCheck(url: String): Long = withContext(Dispatchers.IO) {
+        if (app.ghostly.core.vpn.Probe.method == app.ghostly.core.model.PingMethod.PROXY_HEAD) appPort?.let { return@withContext AndroidHttpProbe.socks(it, url) }
         val core = liveCore ?: return@withContext -1L
         try {
             core.measureDelay(url)

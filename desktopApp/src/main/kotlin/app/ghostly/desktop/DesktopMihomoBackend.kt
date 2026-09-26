@@ -293,6 +293,7 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
                 c.connectTimeout = 6000
                 c.readTimeout = 6000
                 c.instanceFollowRedirects = false
+                c.requestMethod = app.ghostly.core.vpn.Probe.httpMethod
                 val code = c.responseCode
                 c.disconnect()
                 code in 200..399

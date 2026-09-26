@@ -30,10 +30,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.URI
 
 /**
  * Android mihomo, main-process side. The core itself (legiz-ru's Prizrak-Core through the
@@ -184,23 +180,7 @@ object AndroidMihomo : MihomoCore {
 
     override suspend fun healthCheck(url: String): Long = withContext(Dispatchers.IO) {
         val port = appPort ?: return@withContext -1L
-        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port))
-        var best = -1L
-        repeat(2) {
-            val t0 = System.nanoTime()
-            val ok = runCatching {
-                val c = URI(url).toURL().openConnection(proxy) as HttpURLConnection
-                c.connectTimeout = 6000
-                c.readTimeout = 6000
-                c.instanceFollowRedirects = false
-                val code = c.responseCode
-                c.disconnect()
-                code in 200..399
-            }.getOrDefault(false)
-            val ms = (System.nanoTime() - t0) / 1_000_000
-            if (ok && (best < 0 || ms < best)) best = ms
-        }
-        best
+        AndroidHttpProbe.socks(port, url)
     }
 
     override suspend fun ping(server: Server, url: String): Long = -1

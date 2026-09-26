@@ -14,6 +14,19 @@ enum class RoutingMode {
 @Serializable
 enum class CoreType { XRAY, MIHOMO }
 
+/** How server latency is measured (like Happ / Incy). */
+@Serializable
+enum class PingMethod(val title: String) {
+    /** Full HTTP GET to the ping URL through the server: the real round-trip of the tunnel. */
+    PROXY_GET("via proxy GET"),
+    /** The same with HEAD: no response body, a bit faster and lighter. */
+    PROXY_HEAD("via proxy HEAD"),
+    /** TCP handshake with the server itself; does not prove the tunnel works. */
+    TCP("TCP"),
+    /** System ping (ICMP) of the server's host; many servers drop it. */
+    ICMP("ICMP"),
+}
+
 @Serializable
 enum class SplitMode { OFF, ONLY_SELECTED, BYPASS_SELECTED }
 
@@ -102,6 +115,7 @@ data class AppSettings(
     /** Look for a new app version in the background (every 6 hours). */
     val autoCheckUpdates: Boolean = true,
     val pingUrl: String = "https://www.gstatic.com/generate_204",
+    val pingMethod: PingMethod = PingMethod.PROXY_GET,
     val logLevel: String = "warning",
     // --- look & feel
     val accent: ThemeAccent = ThemeAccent.GHOST,
