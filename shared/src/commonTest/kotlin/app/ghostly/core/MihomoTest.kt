@@ -95,6 +95,16 @@ class MihomoTest {
     }
 
     @Test
+    fun pingConfigHasOnlyProxiesAndController() {
+        val parsed = SubscriptionParser.parse(yaml, emptyMap(), "p1")
+        val cfg = MihomoProfiles.pingConfig(parsed.servers + parsed.servers, 5555, "k")
+        assertEquals(2, (cfg["proxies"] as JsonArray).size)
+        assertEquals("127.0.0.1:5555", cfg["external-controller"]!!.jsonPrimitive.content)
+        assertEquals("normal", (cfg["dns"] as JsonObject)["enhanced-mode"]!!.jsonPrimitive.content)
+        assertNull(cfg["tun"])
+    }
+
+    @Test
     fun linksGetOwnGroups() {
         val s = app.ghostly.core.link.LinkParser.parse("trojan://pass@example.com:443?sni=example.com#Test", "m:0")!!
         val settings = AppSettings(core = CoreType.MIHOMO)

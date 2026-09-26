@@ -94,6 +94,42 @@ object MihomoProfiles {
         return emptyList()
     }
 
+    /**
+     * A minimal config that only measures [servers]: their proxies, a controller and nothing else.
+     * Chains (`dialer-proxy` to a group that isn't here) are cut, so the config always loads;
+     * duplicate names are dropped (mihomo refuses them).
+     */
+    fun pingConfig(servers: List<Server>, controllerPort: Int, secret: String): JsonObject {
+        val seen = HashSet<String>()
+        val proxies = servers.mapNotNull { s ->
+            val p = s.mihomo ?: return@mapNotNull null
+            val name = p.str("name") ?: return@mapNotNull null
+            if (!seen.add(name)) null else JsonObject(p - "dialer-proxy")
+        }
+        return JsonObject(
+            mapOf(
+                "mode" to JsonPrimitive("rule"),
+                "log-level" to JsonPrimitive("silent"),
+                "ipv6" to JsonPrimitive(false),
+                "external-controller" to JsonPrimitive("127.0.0.1:$controllerPort"),
+                "secret" to JsonPrimitive(secret),
+                "profile" to JsonObject(mapOf("store-selected" to JsonPrimitive(false), "store-fake-ip" to JsonPrimitive(false))),
+                // Plain DNS (no fake-ip): otherwise the Android bridge turns on fake-ip with its store in
+                // cache.db, which the running tunnel's process already holds.
+                "dns" to JsonObject(
+                    mapOf(
+                        "enable" to JsonPrimitive(true),
+                        "enhanced-mode" to JsonPrimitive("normal"),
+                        "default-nameserver" to JsonArray(listOf(JsonPrimitive("77.88.8.8"), JsonPrimitive("1.1.1.1"))),
+                        "nameserver" to JsonArray(listOf(JsonPrimitive("https://77.88.8.8/dns-query"), JsonPrimitive("https://1.1.1.1/dns-query"))),
+                    ),
+                ),
+                "proxies" to JsonArray(proxies),
+                "rules" to JsonArray(listOf(JsonPrimitive("MATCH,DIRECT"))),
+            ),
+        )
+    }
+
     private fun JsonObject.str(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
 
     private fun JsonArray?.orEmpty(): List<kotlinx.serialization.json.JsonElement> = this ?: emptyList()

@@ -247,13 +247,7 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
         val controller = DesktopXrayBackend.freePort()
         val secret = randomSecret()
         val dir = File(home, "ping").apply { mkdirs() }
-        val cfg = buildJsonObject {
-            put("log-level", "silent")
-            put("external-controller", "127.0.0.1:$controller")
-            put("secret", secret)
-            put("proxies", JsonArray(proxies))
-            put("rules", JsonArray(listOf(JsonPrimitive("MATCH,DIRECT"))))
-        }
+        val cfg = app.ghostly.core.mihomo.MihomoProfiles.pingConfig(servers, controller, secret)
         val file = File(dir, "config.yaml").apply { writeText(JsonX.encodeToString(JsonObject.serializer(), cfg)) }
         val p = ProcessBuilder(exe.absolutePath, "-d", dir.absolutePath, "-f", file.absolutePath)
             .directory(dir).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
