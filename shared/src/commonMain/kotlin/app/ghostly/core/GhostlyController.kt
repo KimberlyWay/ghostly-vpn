@@ -118,6 +118,10 @@ class GhostlyController(
     private var userWantsConnection = false
 
     init {
+        // mihomo became the default core: move existing installs over once; a manual choice later sticks.
+        if (!_settings.value.coreDefaultApplied) {
+            updateSettings { it.copy(core = app.ghostly.core.model.CoreType.MIHOMO, coreDefaultApplied = true) }
+        }
         (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.profileOf = ::profileOf
         app.ghostly.core.vpn.Probe.method = _settings.value.pingMethod
         // A kill switch left engaged by a crash must never keep the internet blocked.
@@ -159,7 +163,7 @@ class GhostlyController(
                         runCatching { updater.install(offer) }
                     }
                 }
-                kotlinx.coroutines.delay(3_600_000L)
+                kotlinx.coroutines.delay(20 * 60_000L)
             }
         }
         scope.launch(Dispatchers.IO) {

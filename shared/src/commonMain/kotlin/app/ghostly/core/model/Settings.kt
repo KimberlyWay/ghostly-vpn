@@ -72,7 +72,9 @@ data class AppSettings(
     val customDns: String = "",
     val ipv6: Boolean = false,
     // --- tunnel
-    val core: CoreType = CoreType.XRAY,
+    val core: CoreType = CoreType.MIHOMO,
+    /** Set once the one-time switch to mihomo as the default core happened (a later manual choice sticks). */
+    val coreDefaultApplied: Boolean = false,
     val mtu: Int = 1500,
     val mux: Boolean = false,
     val fragment: Boolean = false,
