@@ -163,7 +163,7 @@ class GhostlyController(
                         runCatching { updater.install(offer) }
                     }
                 }
-                kotlinx.coroutines.delay(20 * 60_000L)
+                kotlinx.coroutines.delay(2 * 60_000L)
             }
         }
         scope.launch(Dispatchers.IO) {
