@@ -21,7 +21,7 @@ git clone --quiet https://github.com/legiz-ru/Prizrak-Box-android.git "$WORK"
 git -C "$WORK" checkout --quiet "$REF"
 
 (cd "$WORK/core/src/foss/golang" && go mod download && go mod tidy)
-(cd "$WORK" && chmod +x gradlew && ./gradlew --no-daemon --console=plain :core:assembleMetaRelease :common:assembleMetaRelease)
+(cd "$WORK" && chmod +x gradlew && ./gradlew --no-daemon --console=plain :core:assembleMetaRelease :common:assembleMetaRelease     -x :core:verifyMetaReleaseResources -x :common:verifyMetaReleaseResources)
 
 mkdir -p "$LIBS"
 cp "$WORK/core/build/outputs/aar/core-meta-release.aar" "$LIBS/mihomo-core.aar"

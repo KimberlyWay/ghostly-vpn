@@ -1,4 +1,5 @@
 import java.net.URI
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -105,8 +106,9 @@ abstract class FetchMihomoDesktop : DefaultTask() {
                     }
                 }
             } else {
-                java.util.zip.GZIPInputStream(input).use { gz -> tmp.outputStream().use { gz.copyTo(it) } }
+                GZIPInputStream(input).use { gz -> tmp.outputStream().use { gz.copyTo(it) } }
             }
+            Unit
         }
         if (out.exists()) out.delete()
         tmp.renameTo(out)
