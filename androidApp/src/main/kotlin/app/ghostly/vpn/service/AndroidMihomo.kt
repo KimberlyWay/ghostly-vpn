@@ -14,6 +14,7 @@ import app.ghostly.core.mihomo.MihomoPick
 import app.ghostly.core.model.AppSettings
 import app.ghostly.core.model.Profile
 import app.ghostly.core.model.Server
+import app.ghostly.core.vpn.CoreLog
 import app.ghostly.core.vpn.Traffic
 import app.ghostly.core.vpn.VpnState
 import app.ghostly.core.xray.XrayConfigBuilder
@@ -111,7 +112,7 @@ object AndroidMihomo : MihomoCore {
     @Volatile private var logLevel: String = "warning"
 
     /** The core runs in another process: its log comes over the controller's /logs stream. */
-    override val coreLog = app.ghostly.core.vpn.CoreLog()
+    override val coreLog = CoreLog()
 
     /** mihomo's home in the `:mihomo` processes (the bridge uses files/clash). */
     fun homeDir(context: Context) = File(context.filesDir, "clash")
