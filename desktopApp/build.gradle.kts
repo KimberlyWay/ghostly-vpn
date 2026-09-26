@@ -1,4 +1,4 @@
-import java.net.URI
+﻿import java.net.URI
 import java.util.zip.ZipInputStream
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
@@ -84,7 +84,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "Ghostly"
-            packageVersion = "0.1.7"
+            packageVersion = "0.1.8"
             description = "Ghostly VPN"
             vendor = "Ghostly"
             copyright = "GPL-3.0"

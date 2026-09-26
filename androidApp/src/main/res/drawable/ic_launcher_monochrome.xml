@@ -1,5 +1,8 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
+    <!-- ghost-scale: smaller ghost, more air inside the launcher mask -->
+    <group android:scaleX="0.8" android:scaleY="0.8" android:pivotX="54" android:pivotY="56">
     <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M32,46 A22,22 0 0,1 76,46 L76,80 Q68.67,89.1 61.33,80 Q54,89.1 46.67,80 Q39.33,89.1 32,80 Z M42.7,48 a2.9,4.2 0 1,0 5.8,0 a2.9,4.2 0 1,0 -5.8,0 Z M59.5,48 a2.9,4.2 0 1,0 5.8,0 a2.9,4.2 0 1,0 -5.8,0 Z" />
+    </group>
 </vector>
