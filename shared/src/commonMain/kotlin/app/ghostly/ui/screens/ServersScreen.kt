@@ -52,6 +52,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Public
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -286,9 +296,9 @@ private fun BestRow(server: Server, ms: Long?, onClick: () -> Unit) {
         Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
             .pressScale(interaction, 0.97f, hover = 1.015f)
             .clip(RoundedCornerShape(20.dp))
-            .background(Brush.linearGradient(listOf(c.accent.copy(alpha = 0.22f), c.ok.copy(alpha = 0.10f))))
-            .spotlight(c.ok, 180.dp)
-            .border(1.dp, c.accent.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.045f))
+            .spotlight(c.accent, 180.dp)
+            .border(1.dp, c.line, RoundedCornerShape(20.dp))
             .clickable(interaction, null, onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -311,23 +321,38 @@ private fun ServerRow(
 ) {
     val c = Ghost.colors
     val interaction = remember { MutableInteractionSource() }
-    val bg by animateColorAsState(if (selected) c.accent.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.035f), Motion.quick())
-    val border by animateColorAsState(if (selected) c.accent.copy(alpha = 0.45f) else c.line, Motion.quick())
+    val hovered by interaction.collectIsHoveredAsState()
+    // A list, not a stack of cards: rows are flat, the chosen one gets a tint and an accent bar.
+    val bg by animateColorAsState(
+        when {
+            selected -> c.accent.copy(alpha = 0.11f)
+            hovered -> Color.White.copy(alpha = 0.045f)
+            else -> Color.Transparent
+        },
+        Motion.quick(),
+    )
+    val bar by animateFloatAsState(if (selected) 1f else 0f, Motion.bouncy())
+    val showTools = !controller.platform.isDesktop || hovered || selected
     var menu by remember { mutableStateOf(false) }
     Row(
-        modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
-            .pressScale(interaction, 0.975f, hover = 1.015f)
-            .clip(RoundedCornerShape(20.dp))
+        modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 1.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(bg)
-            .spotlight(c.accent, 160.dp)
-            .border(1.dp, border, RoundedCornerShape(20.dp))
-            .orbitBorder(selected, c.accent, 20.dp)
+            .drawBehind {
+                if (bar > 0.01f) drawRoundRect(
+                    c.accent,
+                    topLeft = Offset(0f, size.height * (0.5f - 0.28f * bar)),
+                    size = Size(3.dp.toPx(), size.height * 0.56f * bar),
+                    cornerRadius = CornerRadius(2.dp.toPx()),
+                )
+            }
+            .pointerHoverIcon(PointerIcon.Hand)
             .clickable(interaction, null, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 11.dp)
+            .padding(start = 12.dp, end = 6.dp, top = 9.dp, bottom = 9.dp)
             .animateContentSize(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ServerAvatar(server, 40.dp)
+        ServerGlyph(server)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             val t = server.title()
@@ -338,24 +363,23 @@ private fun ServerRow(
                     Text(" · $it", style = MaterialTheme.typography.bodyMedium.copy(color = c.ink2), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 }
             }
-            Spacer(Modifier.height(3.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Tag(server.protocolLabel(), color = c.accent)
-                server.transportLabel()?.let { Tag(it) }
-            }
+            // One quiet line instead of coloured badges; the protocol is skipped when the name already says it.
+            val proto = server.protocolLabel()
+            val meta = listOfNotNull(proto.takeUnless { t.title.contains(it, ignoreCase = true) }, server.transportLabel()).joinToString(" · ")
+            if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         Spacer(Modifier.width(8.dp))
-        if (!server.isAuto) PingPill(ping?.ms, loading, Modifier.clickable { controller.ping(server.id) })
-        Box {
+        if (!server.isAuto) PingText(ping?.ms, loading, Modifier.clip(RoundedCornerShape(8.dp)).clickable { controller.ping(server.id) }.padding(horizontal = 6.dp, vertical = 4.dp))
+        if (favorite || showTools) {
             Icon(
                 if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder, null,
                 tint = if (favorite) c.warn else c.ink3.copy(alpha = 0.6f),
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.toggleFavorite(server.id) }.padding(8.dp),
+                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.toggleFavorite(server.id) }.padding(7.dp),
             )
-        }
+        } else Spacer(Modifier.width(32.dp))
         Box {
-            Icon(Icons.Rounded.MoreHoriz, null, tint = c.ink3,
-                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { menu = true }.padding(6.dp))
+            Icon(Icons.Rounded.MoreHoriz, null, tint = c.ink3.copy(alpha = if (showTools) 1f else 0f),
+                modifier = Modifier.size(30.dp).clip(RoundedCornerShape(10.dp)).clickable { menu = true }.padding(6.dp))
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(text = { Text("Проверить пинг") }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) },
                     onClick = { menu = false; controller.ping(server.id) })
@@ -370,6 +394,51 @@ private fun ServerRow(
                 }
             }
         }
+    }
+}
+
+/** Flag if the name has one, otherwise a small muted protocol glyph — no filled tiles on every row. */
+@Composable
+private fun ServerGlyph(server: Server) {
+    val c = Ghost.colors
+    val flag = server.title().flag
+    Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+        when {
+            flag != null -> Text(flag, fontSize = 18.sp)
+            server.isAuto -> Icon(Icons.Rounded.AutoAwesome, null, tint = c.accent, modifier = Modifier.size(19.dp))
+            server.isWhitelist -> Icon(Icons.Rounded.Shield, null, tint = c.ink2, modifier = Modifier.size(18.dp))
+            server.protocol == "hysteria" -> Icon(Icons.Rounded.Bolt, null, tint = c.ink2, modifier = Modifier.size(19.dp))
+            else -> Icon(Icons.Rounded.Public, null, tint = c.ink2, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/** Ping as coloured text with a dot — lighter than a pill in a long list. */
+@Composable
+private fun PingText(ms: Long?, loading: Boolean, modifier: Modifier = Modifier) {
+    val c = Ghost.colors
+    val color by animateColorAsState(
+        when {
+            loading || ms == null -> c.ink3
+            ms <= 0 -> c.bad
+            ms < 180 -> c.ok
+            ms < 450 -> c.warn
+            else -> c.bad
+        },
+        Motion.quick(),
+    )
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(6.dp))
+        app.ghostly.ui.components.RollingText(
+            when {
+                loading -> "···"
+                ms == null -> "—"
+                ms <= 0 -> "нет"
+                else -> "$ms мс"
+            },
+            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"), color = color,
+        )
     }
 }
 

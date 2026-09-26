@@ -30,6 +30,7 @@ fun main(args: Array<String>) {
     if (!first) return
     if (!platform.portable) SingleInstance.registerUrlScheme()
     val backend = DesktopXrayBackend(platform)
+    if (hostOs == HostOs.WINDOWS) platform.killSwitch = WindowsKillSwitch(platform.dataDir, { java.io.File(backend.coreDir, DesktopXrayBackend.exeName) }, backend::isElevated)
     // TUN needs admin: relaunch the installed app elevated (UAC prompt) right away instead of failing on connect.
     val exe = ProcessHandle.current().info().command().orElse("")
     if (hostOs == HostOs.WINDOWS && exe.endsWith("Ghostly.exe", true) && "--elevated" !in args && !backend.isElevated()) {
@@ -70,6 +71,16 @@ fun main(args: Array<String>) {
 
         var visible by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(!autostart) }
         val trayState = androidx.compose.ui.window.rememberTrayState()
+        // New version → a Windows notification too, so the update can't go unnoticed behind the tray.
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            var told: String? = null
+            c.updater.offer.collect { o ->
+                if (o != null && o.version != told) {
+                    told = o.version
+                    trayState.sendNotification(androidx.compose.ui.window.Notification("Вышла Ghostly ${o.version}", "Открой Ghostly и нажми «Обновить» — установится само, настройки сохранятся."))
+                }
+            }
+        }
         var trayHintShown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
         fun quit() {

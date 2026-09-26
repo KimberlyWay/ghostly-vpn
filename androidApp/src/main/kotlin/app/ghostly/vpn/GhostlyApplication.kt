@@ -90,8 +90,13 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
         } else {
             @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
         }
-        if (Build.VERSION.SDK_INT >= 29) vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
-        else vibrator.vibrate(VibrationEffect.createOneShot(12, 80))
+        if (vibrator == null || !vibrator.hasVibrator()) return
+        runCatching {
+            // EFFECT_TICK is so faint that many ROMs (MIUI, One UI) skip it — a short firm pulse is felt everywhere.
+            val effect = if (vibrator.hasAmplitudeControl()) VibrationEffect.createOneShot(22, 170)
+            else VibrationEffect.createOneShot(22, VibrationEffect.DEFAULT_AMPLITUDE)
+            vibrator.vibrate(effect)
+        }
     }
 
     override fun lanAddress(): String? = runCatching {
@@ -143,6 +148,8 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
             else -> app.ghostly.core.vpn.NetType.UNKNOWN
         }
     }.getOrDefault(app.ghostly.core.vpn.NetType.UNKNOWN)
+
+    override fun utcOffsetMinutes(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000
 
     override val updateAsset: String = when (Build.SUPPORTED_ABIS.firstOrNull()) {
         "arm64-v8a" -> "Ghostly-Android.apk"

@@ -40,10 +40,18 @@ class DesktopPlatform : PlatformInfo {
     override fun networkType(): app.ghostly.core.vpn.NetType = app.ghostly.core.vpn.NetType.WIFI
 
     /** Installed Windows build updates itself; dev runs (java.exe) and other OSes don't. */
+    override fun utcOffsetMinutes(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000
+
     override val updateAsset: String? = run {
         val exe = ProcessHandle.current().info().command().orElse("")
         if (hostOs == HostOs.WINDOWS && exe.endsWith("Ghostly.exe", ignoreCase = true) && !portable) "Ghostly-Windows.exe" else null
     }
+
+    /** Music on this PC for stage mode (Windows only for now). */
+    override val stage: app.ghostly.core.stage.StageSource? by lazy { if (hostOs == HostOs.WINDOWS) DesktopStage(dataDir) else null }
+
+    /** Wired by main() once the backend exists (needs the core path and elevation check). */
+    override var killSwitch: app.ghostly.core.vpn.KillSwitch? = null
 
     /** Set by main(): disconnect (restores the system proxy) and exit so the installer can replace files. */
     var quitForUpdate: (() -> Unit)? = null

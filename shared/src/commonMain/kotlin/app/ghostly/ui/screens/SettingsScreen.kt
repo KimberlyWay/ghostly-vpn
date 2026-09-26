@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
@@ -226,6 +227,17 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
             if (controller.platform.updateAsset != null) {
                 ToggleRow("Искать обновления приложения", "Раз в несколько часов, скачивание — только по твоей кнопке", s.autoCheckUpdates, Icons.Rounded.Refresh) { v -> set { it.copy(autoCheckUpdates = v) } }
             }
+            controller.platform.killSwitch?.let { ks ->
+                // Asking the firewall spawns netsh — do it off the UI thread, once per screen.
+                val reason by androidx.compose.runtime.produceState<String?>("Проверяю брандмауэр…", ks) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ks.unavailableReason() }
+                }
+                ToggleRow(
+                    "Kill switch",
+                    reason ?: "Если VPN неожиданно упадёт, интернет блокируется, пока туннель не вернётся — ни один пакет мимо VPN",
+                    s.killSwitch && reason == null, Icons.Rounded.Lock,
+                ) { v -> val r = reason; if (r == null) set { it.copy(killSwitch = v) } else controller.toast(r) }
+            }
             controller.platform.systemVpnSettings?.let { open ->
                 SettingRow("Kill switch", "Системная настройка: «Постоянная VPN» + «Блокировать соединения без VPN»", Icons.Rounded.Lock, onClick = open) { Chevron() }
             }
@@ -247,7 +259,15 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
                 }
             }
             ToggleRow("Меньше анимаций", "Спокойнее и экономнее для батареи", s.reduceMotion, Icons.Rounded.Animation) { v -> set { it.copy(reduceMotion = v) } }
-            ToggleRow("Вибрация", "Лёгкий отклик на нажатия", s.haptics, Icons.Rounded.Vibration) { v -> set { it.copy(haptics = v) } }
+            if (controller.platform.stage != null) {
+                ToggleRow(
+                    "Сцена", "Призрак подпевает музыке, которая играет на компьютере, а интерфейс светится и движется в её ритме и настроении",
+                    s.stageMode, Icons.Rounded.MusicNote,
+                ) { v -> set { it.copy(stageMode = v) } }
+            }
+            if (!controller.platform.isDesktop) {
+                ToggleRow("Вибрация", "Лёгкий отклик на нажатия", s.haptics, Icons.Rounded.Vibration) { v -> set { it.copy(haptics = v) } }
+            }
         }
 
         SectionTitle("Ещё")
@@ -611,7 +631,8 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         Group {
             SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
             if (controller.platform.updateAsset != null) {
-                SettingRow("Проверить обновления", "Скачиваются с нашего сервера и проверяются по SHA-256", Icons.Rounded.Refresh, onClick = { controller.checkUpdates(manual = true) }) { Chevron() }
+                val last by controller.updater.lastCheck.collectAsState()
+                SettingRow("Проверить обновления", last ?: "Скачиваются с нашего сервера и проверяются по SHA-256", Icons.Rounded.Refresh, onClick = { controller.checkUpdates(manual = true) }) { Chevron() }
             }
             SettingRow("Исходный код", "Открытый проект на GitHub · GPL-3.0", Icons.Rounded.Code, onClick = { controller.platform.openUrl(GITHUB_URL) }) { Chevron() }
             SettingRow("Сайт", "ghostlinknex.online", Icons.Rounded.Language, onClick = { controller.platform.openUrl("https://ghostlinknex.online") }) { Chevron() }

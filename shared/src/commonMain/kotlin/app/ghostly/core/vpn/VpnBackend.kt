@@ -104,6 +104,9 @@ interface PlatformInfo {
     /** Hands a verified update to the OS installer (Android package installer / Windows setup). */
     fun installUpdate(path: String) {}
 
+    /** Local time zone offset from UTC, minutes (greetings, local clock). */
+    fun utcOffsetMinutes(): Int = 180
+
     /** The physical network under the tunnel (drives white-list decisions). */
     fun networkType(): NetType = NetType.UNKNOWN
 
@@ -125,8 +128,23 @@ interface PlatformInfo {
     /** Installed apps for per-app split tunnelling (Android). */
     suspend fun installedApps(): List<AppEntry> = emptyList()
 
+    /** Music on the computer: audio analysis + now playing (desktop "stage mode"). */
+    val stage: app.ghostly.core.stage.StageSource? get() = null
+
+    /** App-level kill switch (desktop); Android uses the system one via [systemVpnSettings]. */
+    val killSwitch: KillSwitch? get() = null
+
     /** Opens the OS page with always-on VPN / "block connections without VPN" (kill switch). */
     val systemVpnSettings: (() -> Unit)? get() = null
+}
+
+/** Blocks traffic outside the tunnel while it is down (desktop firewall based). */
+interface KillSwitch {
+    val engaged: Boolean
+    /** Null when it can work right now, otherwise a human reason. */
+    fun unavailableReason(): String?
+    fun engage(): Boolean
+    fun release()
 }
 
 enum class NetType { WIFI, CELLULAR, ETHERNET, UNKNOWN }

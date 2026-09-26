@@ -49,6 +49,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.ghostly.ui.theme.Ghost
+import app.ghostly.ui.theme.LocalDesign
 import app.ghostly.ui.theme.LocalReduceMotion
 import app.ghostly.ui.theme.Motion
 import kotlinx.coroutines.delay
@@ -75,12 +76,35 @@ fun AuroraBackground(energy: Float, modifier: Modifier = Modifier, content: @Com
         val r = Random(7)
         List(70) { floatArrayOf(r.nextFloat(), r.nextFloat(), 0.6f + r.nextFloat() * 1.6f, r.nextFloat() * 6.28f, 0.4f + r.nextFloat()) }
     }
-    Box(modifier.fillMaxSize().background(c.bg)) {
+    // Parallax: the aurora leans away from the cursor, stars (nearer) move more — depth for free.
+    var mouse by remember { mutableStateOf(Offset.Zero) }
+    val par by androidx.compose.animation.core.animateOffsetAsState(mouse, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 18f))
+    val remote = LocalDesign.current
+    val stage = app.ghostly.ui.stage.LocalStage.current
+    Box(
+        modifier.fillMaxSize().background(c.bg).pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val ev = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    val p = ev.changes.firstOrNull()?.position ?: continue
+                    if (!reduce) mouse = Offset(p.x / size.width - 0.5f, p.y / size.height - 0.5f)
+                }
+            }
+        },
+    ) {
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
             val m = maxOf(w, h)
-            fun blob(cx: Float, cy: Float, r: Float, color: Color, alpha: Float) {
+            val px = -par.x * 46.dp.toPx() * remote.parallax
+            val py = -par.y * 34.dp.toPx() * remote.parallax
+            // Stage: the aurora breathes with the bass, sinks with dark songs, blazes on a drop.
+            val sa = stage?.a
+            val glow = remote.aurora * (1f + (sa?.let { it.bass * 0.9f + it.beat * 0.35f + it.drop * 1.6f - it.darkness * 0.55f } ?: 0f)).coerceAtLeast(0.25f)
+            fun blob(cx0: Float, cy0: Float, r0: Float, color: Color, alpha0: Float) {
+                val cx = cx0 + px; val cy = cy0 + py
+                val r = r0 * (1f + (sa?.let { it.bass * 0.10f + it.drop * 0.18f } ?: 0f))
+                val alpha = (alpha0 * glow).coerceIn(0f, 1f)
                 drawCircle(
                     Brush.radialGradient(
                         listOf(color.copy(alpha = alpha), color.copy(alpha = alpha * 0.4f), Color.Transparent),
@@ -97,8 +121,9 @@ fun AuroraBackground(energy: Float, modifier: Modifier = Modifier, content: @Com
             // Ghost dust: tiny stars drifting up and twinkling.
             stars.forEach { s ->
                 val y = ((s[1] - drift * s[4] * 0.35f) % 1f + 1f) % 1f
-                val tw = 0.5f + 0.5f * sin(phase * 3f * s[4] + s[3])
-                drawCircle(Color.White.copy(alpha = (0.10f + 0.35f * tw) * (0.7f + 0.3f * e)), s[2].dp.toPx() * 0.8f, Offset(s[0] * w, y * h))
+                val tw = (0.5f + 0.5f * sin(phase * 3f * s[4] + s[3])) * (1f + (sa?.let { it.treble * 1.2f + it.drop * 2f } ?: 0f))
+                val depth = 1.2f + s[4] * 1.4f
+                drawCircle(Color.White.copy(alpha = (0.10f + 0.35f * tw) * (0.7f + 0.3f * e)), s[2].dp.toPx() * 0.8f, Offset(s[0] * w + px * depth, y * h + py * depth))
             }
             // Vignette keeps text readable at the bottom.
             drawRect(Brush.verticalGradient(listOf(Color.Transparent, c.bg.copy(alpha = 0.6f)), startY = h * 0.55f, endY = h))
@@ -134,6 +159,13 @@ fun GlassCard(
             ),
         )
     if (glow != null) m = m.background(Brush.radialGradient(listOf(glow.copy(alpha = 0.16f), Color.Transparent)))
+    val stageForCard = app.ghostly.ui.stage.LocalStage.current
+    if (stageForCard != null) m = m.drawWithContent {
+        drawContent()
+        val a = stageForCard.a
+        val k = (a.beat * 0.35f + a.drop * 0.5f) * (1f - a.darkness * 0.6f)
+        if (k > 0.02f) drawRect(Brush.verticalGradient(listOf(c.accent.copy(alpha = 0.22f * k), Color.Transparent), endY = size.height * 0.5f))
+    }
     m = m.spotlight(c.accent)
         .border(
             1.dp,

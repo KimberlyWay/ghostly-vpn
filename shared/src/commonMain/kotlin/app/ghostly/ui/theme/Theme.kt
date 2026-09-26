@@ -59,6 +59,9 @@ object Motion {
 val LocalGhostColors = staticCompositionLocalOf { GhostColors() }
 val LocalReduceMotion = staticCompositionLocalOf { false }
 
+/** Server-tunable look (see RemoteDesign). */
+val LocalDesign = androidx.compose.runtime.compositionLocalOf { app.ghostly.core.design.DesignTokens() }
+
 object Ghost {
     val colors: GhostColors @Composable get() = LocalGhostColors.current
 }

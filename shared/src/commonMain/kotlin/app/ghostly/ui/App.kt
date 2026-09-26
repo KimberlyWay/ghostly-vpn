@@ -100,7 +100,10 @@ fun GhostlyApp(controller: GhostlyController) {
     val onboarded by controller.onboarded.collectAsState()
     val state by controller.state.collectAsState()
 
-    GhostlyTheme(settings.accent.argb, settings.reduceMotion) { androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.components.LocalHaptic provides { controller.haptic() }) {
+    val design by controller.design.tokens.collectAsState()
+    // A seasonal accent from the server applies only while the user keeps the default colour.
+    val accent = design.accentArgb()?.takeIf { settings.accent == app.ghostly.core.model.ThemeAccent.GHOST } ?: settings.accent.argb
+    GhostlyTheme(accent, settings.reduceMotion) { androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.components.LocalHaptic provides { controller.haptic() }, app.ghostly.ui.theme.LocalDesign provides design) {
         var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
         var addOpen by remember { mutableStateOf(false) }
         var pickerOpen by remember { mutableStateOf(false) }
@@ -118,6 +121,8 @@ fun GhostlyApp(controller: GhostlyController) {
             if (settings.autoConnect && controller.state.value == VpnState.Idle && controller.selectedServer() != null) controller.connect()
         }
 
+        val stage = app.ghostly.ui.stage.rememberStage(controller, settings.stageMode)
+        androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.stage.LocalStage provides stage) {
         AuroraBackground(energy = if (state is VpnState.Connected) 1f else 0f) {
             val insets = WindowInsets.safeDrawing.asPaddingValues()
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -147,6 +152,8 @@ fun GhostlyApp(controller: GhostlyController) {
                 }
                 SideEffect { wideLayout = wide }
             }
+            // Music on the PC: the whole composition plays along (dimming, rim lights, drop flash, sparks).
+            stage?.let { app.ghostly.ui.stage.StageOverlay(it) }
 
             // Toast
             AnimatedVisibility(
@@ -165,6 +172,7 @@ fun GhostlyApp(controller: GhostlyController) {
             }
         }
 
+        }
         if (addOpen && wideLayout) {
             Dialog(onDismissRequest = { addOpen = false }) {
                 Box(

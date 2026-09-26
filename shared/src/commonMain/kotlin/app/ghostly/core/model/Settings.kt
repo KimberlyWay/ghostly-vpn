@@ -73,6 +73,10 @@ data class AppSettings(
     val allowLan: Boolean = false,
     /** Desktop: the window's ✕ hides Ghostly to the tray instead of quitting. */
     val closeToTray: Boolean = true,
+    /** Desktop: block the internet while the VPN is unexpectedly down (Windows Firewall, TUN mode). */
+    val killSwitch: Boolean = false,
+    /** Desktop: the ghost sings along with the music playing on the PC, the UI plays like a stage. */
+    val stageMode: Boolean = true,
     /** Local SOCKS/HTTP inbounds on phones (for Telegram proxy etc.); always on in desktop proxy mode. */
     val localProxy: Boolean = false,
     /** Login/password on the local proxies. Generated on first run: ghostly_xxxxxx + random password. */

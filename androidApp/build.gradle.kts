@@ -1,4 +1,4 @@
-import java.net.URI
+﻿import java.net.URI
 import java.security.MessageDigest
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -23,7 +23,7 @@ abstract class FetchXrayCore : DefaultTask() {
         if (file.isFile && file.sha256() == sha256.get()) return
         file.parentFile.mkdirs()
         val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v${version.get()}/libv2ray.aar"
-        logger.lifecycle("Downloading Xray core ${version.get()}…")
+        logger.lifecycle("Downloading Xray core ${version.get()}â€¦")
         val tmp = File(file.parentFile, file.name + ".part")
         URI(url).toURL().openStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
         val actual = tmp.sha256()
@@ -87,8 +87,8 @@ android {
         applicationId = "app.ghostly.vpn"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 8
+        versionName = "0.1.7"
     }
 
     signingConfigs {

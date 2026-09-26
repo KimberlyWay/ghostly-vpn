@@ -78,6 +78,9 @@ class GhostlyController(
 
     private var dismissedUpdate: String? = _ui.value.dismissedUpdate
 
+    /** Server-tunable look (glow, parallax, seasonal accent, announcement) — changes without an app update. */
+    val design = app.ghostly.core.design.RemoteDesign(store, "GhostlyVPN/${platform.appVersion} (${platform.os})")
+
     /** App self-update (our server first, GitHub mirror), verified by SHA-256. */
     val updater = app.ghostly.core.update.Updater(platform) { v -> v == dismissedUpdate }
 
@@ -112,6 +115,8 @@ class GhostlyController(
     private var userWantsConnection = false
 
     init {
+        // A kill switch left engaged by a crash must never keep the internet blocked.
+        platform.killSwitch?.takeIf { it.engaged }?.let { ks -> scope.launch(Dispatchers.IO) { ks.release() } }
         // Local proxy credentials: ghostly_xxxxxx + a random password, generated once.
         if (_settings.value.proxyUser.isBlank() || _settings.value.proxyPass.isBlank()) {
             updateSettings { it.copy(proxyUser = it.proxyUser.ifBlank { randomUser() }, proxyPass = it.proxyPass.ifBlank { randomPassword() }) }
@@ -121,13 +126,17 @@ class GhostlyController(
                 when (s) {
                     is VpnState.Connected -> {
                         failoverAttempts = 0
+                        releaseKillSwitch()
                         startGuard()
                         // Fresh traffic numbers right after connecting (and through the tunnel if direct is blocked).
                         if (_settings.value.autoUpdateSubs) launch(Dispatchers.IO) { kotlinx.coroutines.delay(3_000); refreshAll() }
                     }
                     is VpnState.Failed -> {
                         stopGuard()
-                        if (userWantsConnection) onConnectionFailed(s.message)
+                        if (userWantsConnection) {
+                            engageKillSwitch()
+                            onConnectionFailed(s.message)
+                        }
                     }
                     else -> stopGuard()
                 }
@@ -137,7 +146,13 @@ class GhostlyController(
             kotlinx.coroutines.delay(4_000)
             while (true) {
                 if (_settings.value.autoCheckUpdates) runCatching { updater.check() }
-                kotlinx.coroutines.delay(6 * 3_600_000L)
+                kotlinx.coroutines.delay(3_600_000L)
+            }
+        }
+        scope.launch(Dispatchers.IO) {
+            while (true) {
+                runCatching { design.refresh() }
+                kotlinx.coroutines.delay(30 * 60_000L)
             }
         }
         // Subscriptions refresh themselves: at start, then every 15 min check whether the provider's
@@ -426,8 +441,26 @@ class GhostlyController(
             .onFailure { _events.emit(it.message ?: "Не удалось подключиться") }
     }
 
+    fun toast(message: String) {
+        scope.launch { _events.emit(message) }
+    }
+
+    private fun engageKillSwitch() {
+        val ks = platform.killSwitch ?: return
+        if (!_settings.value.killSwitch || ks.engaged) return
+        scope.launch(Dispatchers.IO) {
+            if (ks.engage()) _events.emit("Kill switch: VPN упал — интернет заблокирован, пока туннель не вернётся. Отключи VPN, чтобы снять блок")
+        }
+    }
+
+    private fun releaseKillSwitch() {
+        val ks = platform.killSwitch ?: return
+        if (ks.engaged) scope.launch(Dispatchers.IO) { ks.release() }
+    }
+
     suspend fun disconnect() {
         userWantsConnection = false
+        platform.killSwitch?.takeIf { it.engaged }?.release()
         backend.disconnect()
     }
 

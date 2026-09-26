@@ -79,7 +79,12 @@ import app.ghostly.ui.components.PingPill
 import app.ghostly.ui.components.RollingText
 import app.ghostly.ui.components.Sparkline
 import app.ghostly.ui.components.Tag
+import app.ghostly.ui.components.AnnouncementCard
+import app.ghostly.ui.components.KineticText
+import app.ghostly.ui.components.LiveDot
 import app.ghostly.ui.components.appear
+import app.ghostly.ui.components.orbHalo
+import app.ghostly.ui.components.orbitBorder
 import app.ghostly.ui.protocolLabel
 import app.ghostly.ui.theme.Ghost
 import app.ghostly.ui.theme.Motion
@@ -151,6 +156,7 @@ fun HomeScreen(controller: GhostlyController, onPickServer: () -> Unit, contentP
             m.profile?.supportUrl?.let { url -> IconBubble(Icons.Rounded.SupportAgent, onClick = { controller.platform.openUrl(url) }) }
         }
         app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(top = 12.dp))
+        AnnouncementCard(controller, Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(18.dp))
         HomeHero(m, controller, 236.dp)
         Spacer(Modifier.height(22.dp))
@@ -183,20 +189,32 @@ fun HomeDesktop(controller: GhostlyController, onAdd: () -> Unit) {
             // Top line: which subscription, and when it runs out.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Главная", style = MaterialTheme.typography.headlineMedium)
+                    KineticText(greeting(m.now, controller.platform.utcOffsetMinutes()), style = MaterialTheme.typography.headlineMedium, color = c.ink)
                     Text(m.profile?.name ?: "Добавь подписку, чтобы начать", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 m.profile?.supportUrl?.let { url -> IconBubble(Icons.Rounded.SupportAgent, onClick = { controller.platform.openUrl(url) }) }
             }
-            Spacer(Modifier.height(12.dp))
-            HomeHero(m, controller, 300.dp)
+            AnnouncementCard(controller, Modifier.widthIn(max = 760.dp).padding(top = 12.dp))
+            Spacer(Modifier.height(18.dp))
+            HomeHero(m, controller, 290.dp)
             Spacer(Modifier.height(26.dp))
-            Row(Modifier.widthIn(max = 760.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                SpeedCard("Загрузка", Icons.Rounded.ArrowDownward, m.traffic.downSpeed, m.traffic.downTotal, m.down, c.ok, Modifier.weight(1f).appear(0), dim = m.orb != OrbState.CONNECTED)
-                SpeedCard("Отдача", Icons.Rounded.ArrowUpward, m.traffic.upSpeed, m.traffic.upTotal, m.up, c.accent, Modifier.weight(1f).appear(1), dim = m.orb != OrbState.CONNECTED)
-                Column(Modifier.weight(0.8f).appear(2), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    StatTile(Icons.Rounded.NetworkPing, "Пинг", m.ping?.takeIf { it > 0 }?.let { "$it мс" } ?: "—", pingColor(m.ping))
-                    StatTile(Icons.Rounded.Timer, "Сессия", (m.state as? VpnState.Connected)?.let { Format.duration(m.now - it.since) } ?: "—", c.ink)
+            // Off: one clear "ready" card instead of empty dashes. On: live traffic.
+            AnimatedContent(
+                targetState = m.orb == OrbState.CONNECTED,
+                transitionSpec = {
+                    (fadeIn(Motion.quick(380)) + slideInVertically(Motion.quick(460)) { it / 5 }) togetherWith
+                        (fadeOut(Motion.quick(160)) + slideOutVertically(Motion.quick(200)) { -it / 8 })
+                },
+                modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+            ) { live ->
+                if (!live) ReadyCard(m, controller)
+                else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    SpeedCard("Загрузка", Icons.Rounded.ArrowDownward, m.traffic.downSpeed, m.traffic.downTotal, m.down, c.ok, Modifier.weight(1f).appear(0), live = true)
+                    SpeedCard("Отдача", Icons.Rounded.ArrowUpward, m.traffic.upSpeed, m.traffic.upTotal, m.up, c.accent, Modifier.weight(1f).appear(1), live = true)
+                    Column(Modifier.weight(0.8f).appear(2), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        StatTile(Icons.Rounded.NetworkPing, "Пинг", m.ping?.takeIf { it > 0 }?.let { "$it мс" } ?: "—", pingColor(m.ping))
+                        StatTile(Icons.Rounded.Timer, "Сессия", (m.state as? VpnState.Connected)?.let { Format.duration(m.now - it.since) } ?: "—", c.ink)
+                    }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -208,12 +226,57 @@ fun HomeDesktop(controller: GhostlyController, onAdd: () -> Unit) {
         // Right: servers always at hand.
         GlassCard(Modifier.width(400.dp).fillMaxHeight().appear(1), padding = 0.dp, strong = true) {
             Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Серверы", style = MaterialTheme.typography.titleLarge)
-                    Text("Нажми, чтобы переключиться", style = MaterialTheme.typography.bodySmall)
-                }
+                Text("Серверы", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
             }
             ServersScreen(controller, PaddingValues(bottom = 12.dp), onAdd = onAdd, showHeader = false, compact = true)
+        }
+    }
+}
+
+/** Time-of-day greeting for the desktop header (local clock). */
+private fun greeting(nowMs: Long, offsetMin: Int): String {
+    val h = (((nowMs / 60_000 + offsetMin) / 60) % 24).toInt()
+    return when (h) {
+        in 5..11 -> "Доброе утро"
+        in 12..17 -> "Добрый день"
+        in 18..22 -> "Добрый вечер"
+        else -> "Доброй ночи"
+    }
+}
+
+/** Shown while disconnected: the server we'll use, its ping, and a big connect button. */
+@Composable
+private fun ReadyCard(m: HomeModel, controller: GhostlyController) {
+    val c = Ghost.colors
+    val server = m.server
+    GlassCard(Modifier.fillMaxWidth(), padding = 18.dp, strong = true) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ServerAvatar(server, 52.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(if (m.orb == OrbState.ERROR) "Попробуем ещё раз?" else "Готов к подключению", style = MaterialTheme.typography.labelSmall, color = c.ink3)
+                if (server == null) Text("Сервер не выбран", style = MaterialTheme.typography.titleMedium)
+                else {
+                    val t = server.title()
+                    Text(t.title + (t.subtitle?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        listOfNotNull(server.protocolLabel(), server.transportLabel()).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                    )
+                }
+            }
+            if (server != null && !server.isAuto) {
+                Spacer(Modifier.width(10.dp))
+                PingPill(m.ping, m.pinging)
+            }
+            Spacer(Modifier.width(12.dp))
+            app.ghostly.ui.components.AccentButton(
+                if (m.orb == OrbState.CONNECTING) "Подключаю…" else "Подключить",
+                { controller.haptic(); controller.toggle() },
+                icon = Icons.Rounded.Bolt,
+                enabled = server != null && m.orb != OrbState.CONNECTING,
+            )
         }
     }
 }
@@ -234,29 +297,33 @@ private fun pingColor(ms: Long?): Color {
 @Composable
 fun HomeHero(m: HomeModel, controller: GhostlyController, orbSize: Dp) {
     val c = Ghost.colors
+    val stage = app.ghostly.ui.stage.LocalStage.current
+    val singing = stage?.track?.value?.playing == true
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         ConnectOrb(m.orb, onClick = {
             controller.haptic()
             controller.toggle()
-        }, size = orbSize)
+        }, size = orbSize, modifier = Modifier.orbHalo(m.orb),
+            sing = { stage?.let { s -> val t = s.track.value; if (t != null && t.playing) (s.a.vocal * 1.4f).coerceIn(0f, 1f) else 0f } ?: 0f },
+            beat = { stage?.a?.beat ?: 0f },
+            flare = { stage?.a?.drop ?: 0f },
+            music = { stage?.track?.value?.playing == true },
+        )
         Spacer(Modifier.height(14.dp))
-        AnimatedContent(
-            targetState = m.orb,
-            transitionSpec = { (fadeIn(Motion.quick()) + slideInVertically { it / 3 }) togetherWith (fadeOut(Motion.quick(200)) + slideOutVertically { -it / 3 }) },
-        ) { s ->
-            Text(
-                when (s) {
-                    OrbState.IDLE -> "Не подключено"
-                    OrbState.CONNECTING -> if (m.state == VpnState.Disconnecting) "Отключаюсь…" else "Подключаюсь…"
-                    OrbState.CONNECTED -> "Ты под защитой"
-                    OrbState.ERROR -> "Не удалось подключиться"
-                },
-                style = MaterialTheme.typography.headlineMedium,
-                color = if (s == OrbState.ERROR) c.bad else c.ink,
-            )
-        }
+        KineticText(
+            when (m.orb) {
+                OrbState.IDLE -> "Не подключено"
+                OrbState.CONNECTING -> if (m.state == VpnState.Disconnecting) "Отключаюсь…" else "Подключаюсь…"
+                OrbState.CONNECTED -> "Ты под защитой"
+                OrbState.ERROR -> "Не удалось подключиться"
+            },
+            style = MaterialTheme.typography.headlineMedium,
+            color = if (m.orb == OrbState.ERROR) c.bad else c.ink,
+        )
         Spacer(Modifier.height(4.dp))
-        when (val st = m.state) {
+        // Music playing on the PC: the ghost sings it, the line types itself under the orb.
+        if (singing && stage != null && m.state !is VpnState.Failed) app.ghostly.ui.stage.SungLine(stage, Modifier.padding(top = 4.dp))
+        else when (val st = m.state) {
             is VpnState.Connected -> RollingText(
                 Format.duration(m.now - st.since),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
@@ -288,16 +355,17 @@ fun HomeHero(m: HomeModel, controller: GhostlyController, orbSize: Dp) {
 @Composable
 fun SpeedCard(
     label: String, icon: ImageVector, speed: Long, total: Long,
-    history: List<Float>, color: Color, modifier: Modifier, dim: Boolean = false,
+    history: List<Float>, color: Color, modifier: Modifier, dim: Boolean = false, live: Boolean = false,
 ) {
     val c = Ghost.colors
-    GlassCard(modifier, padding = 16.dp) {
+    GlassCard(modifier.orbitBorder(live && speed > 0, color, 26.dp), padding = 16.dp, glow = if (live) color else null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(24.dp).clip(CircleShape).background(color.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
                 Icon(icon, null, tint = color, modifier = Modifier.size(15.dp))
             }
             Spacer(Modifier.width(8.dp))
-            Text(label, style = MaterialTheme.typography.labelMedium, color = c.ink3)
+            Text(label, style = MaterialTheme.typography.labelMedium, color = c.ink3, modifier = Modifier.weight(1f))
+            if (live) LiveDot(color)
         }
         Spacer(Modifier.height(10.dp))
         RollingText(

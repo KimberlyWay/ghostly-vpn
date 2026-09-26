@@ -49,9 +49,16 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
     private val _step = MutableStateFlow<UpdateStep>(UpdateStep.Idle)
     val step: StateFlow<UpdateStep> = _step.asStateFlow()
 
+    private val _lastCheck = MutableStateFlow<String?>(null)
+    /** Human-readable result of the latest check, shown in "О приложении" (so it's visible whether updates work). */
+    val lastCheck: StateFlow<String?> = _lastCheck.asStateFlow()
+
     /** @return the offer if a newer version exists (ignores the user's "✕" unless [force]). */
     suspend fun check(force: Boolean = false): UpdateOffer? {
-        val asset = platform.updateAsset ?: return null
+        val asset = platform.updateAsset ?: run {
+            _lastCheck.value = "Эта сборка не обновляется сама (портативная или из исходников)"
+            return null
+        }
         // Ask every mirror at once and trust the newest answer: a CDN edge can hold a stale manifest.
         val manifest = kotlinx.coroutines.coroutineScope {
             MANIFESTS.map { url ->
@@ -62,12 +69,25 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
                     }.getOrNull()
                 }
             }.awaitAll().filterNotNull().maxWithOrNull { a, b -> compareVersions(a.version, b.version) }
-        } ?: return null
-        val file = manifest.files[asset] ?: return null
+        } ?: run {
+            _lastCheck.value = "${stamp()}: сервер обновлений недоступен"
+            return null
+        }
+        val file = manifest.files[asset] ?: run {
+            _lastCheck.value = "${stamp()}: в версии ${manifest.version} нет файла $asset"
+            return null
+        }
+        _lastCheck.value = "${stamp()}: на сервере ${manifest.version}, у тебя ${platform.appVersion}" +
+            if (compareVersions(manifest.version, platform.appVersion) > 0) " — есть обновление" else " — всё свежее"
         val newer = compareVersions(manifest.version, platform.appVersion) > 0
         val offer = if (newer && (force || !isDismissed(manifest.version))) UpdateOffer(manifest.version, asset, file.sha256, file.size) else null
         _offer.value = offer
         return offer
+    }
+
+    private fun stamp(): String {
+        val m = (kotlin.time.Clock.System.now().toEpochMilliseconds() / 60_000 + platform.utcOffsetMinutes()) % (24 * 60)
+        return "${(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}"
     }
 
     fun hide() {

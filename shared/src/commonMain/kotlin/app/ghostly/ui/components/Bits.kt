@@ -116,8 +116,8 @@ fun AccentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifie
         modifier
             .pressScale(interaction, 0.96f)
             .clip(RoundedCornerShape(18.dp))
-            .background(Brush.linearGradient(listOf(c.accent, c.accent2)))
-            .sheen(interaction)
+            .background(c.accent)
+            .sheen(interaction, strength = 0.22f)
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
             .clickable(interaction, null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 15.dp),
