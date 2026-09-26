@@ -26,12 +26,26 @@ class GhostlyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // The `:mihomo` process runs only the mihomo core: no Xray (a second Go runtime), no controller.
+        if (isMihomoProcess()) {
+            com.github.kr328.clash.common.Global.init(this)
+            return
+        }
         AndroidVpn.init(this)
+        app.ghostly.vpn.service.AndroidMihomo.init(this)
+    }
+
+    private fun isMihomoProcess(): Boolean {
+        val name = if (android.os.Build.VERSION.SDK_INT >= 28) Application.getProcessName()
+        else runCatching { java.io.File("/proc/self/cmdline").readText().trim(Char(0)) }.getOrDefault("")
+        return name.endsWith(":mihomo")
     }
 
     val platform by lazy { AndroidPlatform(this) }
 
-    val controller by lazy { GhostlyController(platform, AndroidVpn) }
+    val controller by lazy {
+        GhostlyController(platform, app.ghostly.core.mihomo.DualCoreBackend(AndroidVpn, app.ghostly.vpn.service.AndroidMihomo))
+    }
 
     companion object {
         lateinit var instance: GhostlyApplication

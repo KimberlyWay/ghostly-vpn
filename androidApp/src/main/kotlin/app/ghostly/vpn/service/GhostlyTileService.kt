@@ -22,7 +22,7 @@ class GhostlyTileService : TileService() {
     private var watch: Job? = null
 
     override fun onStartListening() {
-        watch = scope.launch { AndroidVpn.state.collect { render(it) } }
+        watch = scope.launch { GhostlyApplication.instance.controller.state.collect { render(it) } }
     }
 
     override fun onStopListening() {
@@ -32,7 +32,7 @@ class GhostlyTileService : TileService() {
 
     override fun onClick() {
         val controller = GhostlyApplication.instance.controller
-        when (AndroidVpn.state.value) {
+        when (controller.state.value) {
             is VpnState.Connected, VpnState.Connecting -> scope.launch { controller.disconnect() }
             else -> if (AndroidVpn.needsPermission() || controller.selectedServer() == null) openApp()
             else scope.launch { controller.connect() }

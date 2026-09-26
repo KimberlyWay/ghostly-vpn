@@ -17,6 +17,8 @@ data class Profile(
     val updateIntervalHours: Int = 12,
     val updatedAt: Long = 0,
     val servers: List<Server> = emptyList(),
+    /** Whole Clash/mihomo config (YAML subscription, kept as JSON): runs on mihomo with its groups and rules. */
+    val mihomo: JsonObject? = null,
 )
 
 /** `subscription-userinfo` header: bytes and a unix-seconds expiry (0 = unlimited). */
@@ -67,10 +69,15 @@ data class Server(
     val link: String? = null,
     /** Traffic pool: "wl" (white lists) or "reg"; from the provider's meta or guessed by name. */
     val pool: String? = null,
+    /** Proxy entry of a Clash/mihomo YAML subscription (the config itself is [Profile.mihomo]). */
+    val mihomo: JsonObject? = null,
 ) {
-    val isAuto: Boolean get() = protocol == "balancer"
+    val isAuto: Boolean get() = protocol == "balancer" || protocol == MIHOMO_PROFILE
     val isWhitelist: Boolean get() = pool == "wl"
 }
+
+/** Pseudo server for a mihomo profile whose proxies come only from proxy-providers. */
+const val MIHOMO_PROFILE = "mihomo"
 
 /** Guess the pool of a server from its name when the provider doesn't say. */
 fun guessPool(name: String): String? {

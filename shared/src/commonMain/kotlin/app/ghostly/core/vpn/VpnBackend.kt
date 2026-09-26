@@ -71,6 +71,9 @@ interface VpnBackend {
 
     /** Version string of the embedded core. */
     fun coreVersion(): String
+
+    /** Switch the running tunnel to [server] without reconnecting (mihomo selectors); false = reconnect instead. */
+    suspend fun switchInPlace(server: Server): Boolean = false
 }
 
 /** Things only the host platform knows. */

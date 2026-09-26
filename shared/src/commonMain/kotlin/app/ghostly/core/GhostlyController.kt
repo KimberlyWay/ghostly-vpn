@@ -81,6 +81,9 @@ class GhostlyController(
     /** Server-tunable look (glow, parallax, seasonal accent, announcement) — changes without an app update. */
     val design = app.ghostly.core.design.RemoteDesign(store, "GhostlyVPN/${platform.appVersion} (${platform.os})")
 
+    /** Proxy groups (selectors) of the running mihomo core. */
+    val mihomoGroups = app.ghostly.core.mihomo.MihomoGroups(backend as? app.ghostly.core.mihomo.DualCoreBackend, scope) { _settings.value.pingUrl }
+
     /** App self-update (our server first, GitHub mirror), verified by SHA-256. */
     val updater = app.ghostly.core.update.Updater(platform) { v -> v == dismissedUpdate }
 
@@ -115,6 +118,7 @@ class GhostlyController(
     private var userWantsConnection = false
 
     init {
+        (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.profileOf = ::profileOf
         // A kill switch left engaged by a crash must never keep the internet blocked.
         platform.killSwitch?.takeIf { it.engaged }?.let { ks -> scope.launch(Dispatchers.IO) { ks.release() } }
         // Local proxy credentials: ghostly_xxxxxx + a random password, generated once.
@@ -206,7 +210,7 @@ class GhostlyController(
             val id = newId()
             _refreshing.update { it + id }
             try {
-                val parsed = subs.fetch(url, id, backend.appPort)
+                val parsed = subs.fetch(url, id, backend.appPort, mihomo = _settings.value.core == app.ghostly.core.model.CoreType.MIHOMO)
                 val profile = Profile(
                     id = id,
                     name = parsed.title ?: hostOf(url),
@@ -217,6 +221,7 @@ class GhostlyController(
                     updateIntervalHours = parsed.updateIntervalHours ?: 12,
                     updatedAt = now(),
                     servers = parsed.servers,
+                    mihomo = parsed.mihomo,
                 )
                 _profiles.update { it + profile }
                 saveProfiles()
@@ -228,6 +233,21 @@ class GhostlyController(
             } finally {
                 _refreshing.update { it - id }
             }
+        }
+
+        if (app.ghostly.core.mihomo.MihomoYaml.looksLikeClash(text)) {
+            val id = newId()
+            val parsed = SubscriptionParser.parse(text, emptyMap(), id)
+            if (parsed.servers.isEmpty()) {
+                _events.emit("В профиле нет серверов")
+                return false
+            }
+            _profiles.update { it + Profile(id = id, name = parsed.title ?: "Профиль mihomo", servers = parsed.servers, mihomo = parsed.mihomo, updatedAt = now()) }
+            saveProfiles()
+            if (server(_selected.value) == null) select(parsed.servers.first().id)
+            markOnboarded()
+            _events.emit("Профиль mihomo добавлен · ${parsed.servers.size} серверов")
+            return true
         }
 
         if (text.startsWith("{") || text.startsWith("[")) {
@@ -293,7 +313,7 @@ class GhostlyController(
         scope.launch(Dispatchers.IO) {
             _refreshing.update { it + profileId }
             try {
-                val parsed = subs.fetch(url, profileId, backend.appPort)
+                val parsed = subs.fetch(url, profileId, backend.appPort, mihomo = _settings.value.core == app.ghostly.core.model.CoreType.MIHOMO)
                 _profiles.update { list ->
                     list.map {
                         if (it.id != profileId) it else it.copy(
@@ -304,6 +324,7 @@ class GhostlyController(
                             updateIntervalHours = parsed.updateIntervalHours ?: it.updateIntervalHours,
                             updatedAt = now(),
                             servers = parsed.servers,
+                            mihomo = parsed.mihomo,
                         )
                     }
                 }
@@ -351,7 +372,11 @@ class GhostlyController(
         _selected.value = serverId
         saveUi()
         if (serverId != null && serverId != previous && backend.state.value is VpnState.Connected) {
-            scope.launch { reconnect() }
+            scope.launch {
+                // mihomo: same profile → just move the selector, no reconnect.
+                val target = server(serverId)
+                if (target == null || !backend.switchInPlace(target)) reconnect()
+            }
         }
     }
 
@@ -674,6 +699,8 @@ class GhostlyController(
         _settings.value = after
         store.save(SETTINGS, AppSettings.serializer(), after)
         if (before.startOnBoot != after.startOnBoot) runCatching { platform.setStartOnBoot(after.startOnBoot) }
+        // Providers send another format to mihomo (Clash YAML with groups): fetch subscriptions again.
+        if (before.core != after.core) refreshAll()
         if (backend.state.value is VpnState.Connected && tunnelAffecting(before) != tunnelAffecting(after)) {
             scope.launch { reconnect() }
         }

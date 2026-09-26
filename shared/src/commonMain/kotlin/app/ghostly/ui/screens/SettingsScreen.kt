@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
@@ -82,6 +83,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import app.ghostly.core.GhostlyController
 import app.ghostly.core.model.AppSettings
+import app.ghostly.core.model.CoreType
 import app.ghostly.core.model.DesktopMode
 import app.ghostly.core.model.DnsPreset
 import app.ghostly.core.model.RoutingMode
@@ -171,6 +173,15 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
     PageScaffold("Настройки", contentPadding, null) {
         SectionTitle("Подключение")
         Group {
+            SettingRow("Ядро", null, Icons.Rounded.Memory)
+            Segmented(listOf(CoreType.XRAY to "Xray", CoreType.MIHOMO to "mihomo"), s.core, { v -> set { it.copy(core = v) } })
+            Text(
+                when (s.core) {
+                    CoreType.XRAY -> "Xray для ссылок и JSON-подписок. Clash/mihomo-профили всё равно запускаются на mihomo."
+                    CoreType.MIHOMO -> "mihomo (Prizrak-Core): подписки приходят в формате Clash с группами-селекторами, ссылки получают группы «Авто» и «Резерв». JSON-конфиги Xray остаются на Xray."
+                },
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            )
             SettingRow("Маршрутизация", when (s.routingMode) {
                 RoutingMode.SMART -> "Умная: российские сайты напрямую"
                 RoutingMode.GLOBAL -> "Весь трафик через VPN"

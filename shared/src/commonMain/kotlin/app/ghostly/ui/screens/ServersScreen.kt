@@ -130,6 +130,10 @@ private fun ServersList(
     val refreshing by controller.refreshing.collectAsState()
     val selected by controller.selectedServerId.collectAsState()
     val favorites by controller.favorites.collectAsState()
+    val mihomoGroups by controller.mihomoGroups.groups.collectAsState()
+    val groupsTesting by controller.mihomoGroups.testing.collectAsState()
+    var openGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
+    val listPad = LocalListPad.current
 
     var query by rememberSaveable { mutableStateOf("") }
     var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
@@ -182,6 +186,13 @@ private fun ServersList(
         if (best != null && query.isBlank()) item {
             BestRow(best, pings[best.id]?.ms) { pick(best) }
         }
+
+        if (query.isBlank()) proxyGroups(
+            mihomoGroups, openGroups, groupsTesting, listPad,
+            onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
+            onSelect = { g, m -> controller.haptic(); controller.mihomoGroups.select(g, m) },
+            onTest = { g -> controller.haptic(); controller.mihomoGroups.test(g) },
+        )
 
         val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) }
         if (favs.isNotEmpty()) {

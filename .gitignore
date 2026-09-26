@@ -24,3 +24,4 @@ desktopApp/core/
 keystore.properties
 *.jks
 *.keystore
+androidApp/libs/.mihomo-ref

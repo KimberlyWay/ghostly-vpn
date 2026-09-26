@@ -74,7 +74,63 @@ val fetchXrayCore = tasks.register<FetchXrayDesktop>("fetchXrayCore") {
     asset = xrayAsset
     target = layout.projectDirectory.dir("core/$hostOs-$hostArch")
 }
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchXrayCore) }
+/**
+ * mihomo core (legiz-ru/Prizrak-Core) next to Xray in the same core/<os>-<arch>/ folder, as
+ * prizrak-core(.exe). Windows ships a zip with one exe, the others a gzipped binary.
+ */
+abstract class FetchMihomoDesktop : DefaultTask() {
+    @get:Input abstract val version: Property<String>
+    @get:Input abstract val asset: Property<String>
+    @get:Input abstract val exeName: Property<String>
+    @get:Internal abstract val target: DirectoryProperty
+
+    @TaskAction
+    fun fetch() {
+        val dir = target.get().asFile.apply { mkdirs() }
+        val out = File(dir, exeName.get())
+        val marker = File(dir, ".mihomo-version")
+        if (out.isFile && marker.isFile && marker.readText() == version.get() + "/" + asset.get()) return
+        val url = "https://github.com/legiz-ru/Prizrak-Core/releases/download/v${version.get()}/${asset.get()}"
+        logger.lifecycle("Downloading $url")
+        val tmp = File(dir, out.name + ".part")
+        URI(url).toURL().openStream().use { input ->
+            if (asset.get().endsWith(".zip")) {
+                ZipInputStream(input).use { zip ->
+                    while (true) {
+                        val e = zip.nextEntry ?: throw GradleException("no executable in ${asset.get()}")
+                        if (!e.isDirectory && e.name.endsWith(".exe")) {
+                            tmp.outputStream().use { zip.copyTo(it) }
+                            break
+                        }
+                    }
+                }
+            } else {
+                java.util.zip.GZIPInputStream(input).use { gz -> tmp.outputStream().use { gz.copyTo(it) } }
+            }
+        }
+        if (out.exists()) out.delete()
+        tmp.renameTo(out)
+        out.setExecutable(true, false)
+        marker.writeText(version.get() + "/" + asset.get())
+    }
+}
+
+val mihomoAsset = "prizrak-core-" + when (hostOs) {
+    "windows" -> if (hostArch == "arm64") "windows-arm64" else "windows-amd64-v1"
+    "macos" -> if (hostArch == "arm64") "darwin-arm64" else "darwin-amd64-v1"
+    else -> if (hostArch == "arm64") "linux-arm64" else "linux-amd64-v1"
+} + "-v" + libs.versions.prizrakCore.get() + if (hostOs == "windows") ".zip" else ".gz"
+
+val fetchMihomoCore = tasks.register<FetchMihomoDesktop>("fetchMihomoCore") {
+    version = libs.versions.prizrakCore
+    asset = mihomoAsset
+    exeName = if (hostOs == "windows") "prizrak-core.exe" else "prizrak-core"
+    target = layout.projectDirectory.dir("core/$hostOs-$hostArch")
+    // Xray's task wipes the folder when its version changes, so it goes first.
+    mustRunAfter(fetchXrayCore)
+    outputs.upToDateWhen { false }
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchXrayCore, fetchMihomoCore) }
 
 compose.desktop {
     application {

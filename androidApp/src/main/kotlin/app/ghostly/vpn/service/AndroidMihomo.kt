@@ -1,0 +1,217 @@
+package app.ghostly.vpn.service
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
+import app.ghostly.core.JsonX
+import app.ghostly.core.mihomo.MihomoApi
+import app.ghostly.core.mihomo.MihomoConfigBuilder
+import app.ghostly.core.mihomo.MihomoCore
+import app.ghostly.core.mihomo.MihomoIngress
+import app.ghostly.core.mihomo.MihomoPick
+import app.ghostly.core.model.AppSettings
+import app.ghostly.core.model.Profile
+import app.ghostly.core.model.Server
+import app.ghostly.core.vpn.Traffic
+import app.ghostly.core.vpn.VpnState
+import app.ghostly.core.xray.XrayConfigBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URI
+
+/**
+ * Android mihomo, main-process side. The core itself (legiz-ru's Prizrak-Core through the
+ * ClashMetaForAndroid bridge) runs in [MihomoVpnService] in its own `:mihomo` process: two Go
+ * runtimes (Xray's libv2ray and mihomo's libclash) must never share a process.
+ *
+ * Here we build the config and files, start/stop the service, follow its state broadcasts and talk
+ * to the core over its REST controller on loopback (groups, selectors, traffic).
+ */
+object AndroidMihomo : MihomoCore {
+
+    private lateinit var app: Context
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val mutableState = MutableStateFlow<VpnState>(VpnState.Idle)
+    override val state: StateFlow<VpnState> = mutableState.asStateFlow()
+    private val mutableTraffic = MutableStateFlow(Traffic())
+    override val traffic: StateFlow<Traffic> = mutableTraffic.asStateFlow()
+
+    @Volatile override var api: MihomoApi? = null
+        private set
+    @Volatile override var appPort: Int? = null
+        private set
+
+    /** What the next "connected" broadcast belongs to. */
+    private class Pending(val serverId: String, val controller: Int, val secret: String, val appPort: Int, val picks: List<MihomoPick>)
+    @Volatile private var pending: Pending? = null
+    private var trafficJob: Job? = null
+    @Volatile private var version: String? = null
+
+    /** mihomo's home in the `:mihomo` process (the bridge uses files/clash). */
+    fun homeDir(context: Context) = File(context.filesDir, "clash")
+    fun profileDir(context: Context) = File(homeDir(context), "ghostly")
+
+    fun init(context: Context) {
+        app = context.applicationContext
+        ContextCompat.registerReceiver(app, object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) = onServiceState(intent)
+        }, IntentFilter(MihomoVpnService.ACTION_STATE), ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    override suspend fun connect(server: Server, profile: Profile?, settings: AppSettings): Unit = withContext(Dispatchers.IO) {
+        stopLocal()
+        mutableState.value = VpnState.Connecting
+        try {
+            val controller = freePort()
+            val secret = (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+            val appPort0 = freePort()
+            val ingress = MihomoIngress(
+                controllerPort = controller,
+                secret = secret,
+                appPort = appPort0,
+                proxy = if (settings.localProxy) XrayConfigBuilder.localProxy(settings) else null,
+            )
+            val plan = MihomoConfigBuilder.build(server, profile, settings, ingress)
+            val dir = profileDir(app).apply { mkdirs() }
+            // The bridge moves provider files under <profile>/providers/.
+            plan.links?.let { File(dir, "providers").apply { mkdirs() }.resolve(MihomoConfigBuilder.LINKS_FILE).writeText(it) }
+            File(dir, "config.yaml").writeText(JsonX.encodeToString(JsonObject.serializer(), plan.config))
+            copyGeoData()
+            pending = Pending(server.id, controller, secret, appPort0, plan.picks)
+
+            val intent = Intent(app, MihomoVpnService::class.java)
+                .setAction(MihomoVpnService.ACTION_START)
+                .putExtra(MihomoVpnService.EXTRA_NAME, server.name)
+                .putExtra(MihomoVpnService.EXTRA_MTU, settings.mtu)
+                .putExtra(MihomoVpnService.EXTRA_IPV6, settings.ipv6)
+                .putExtra(MihomoVpnService.EXTRA_SPLIT_MODE, settings.splitMode.name)
+                .putExtra(MihomoVpnService.EXTRA_SPLIT_APPS, settings.splitApps.toTypedArray())
+            ContextCompat.startForegroundService(app, intent)
+            Unit
+        } catch (e: Exception) {
+            mutableState.value = VpnState.Failed("mihomo: ${e.message ?: "не удалось подготовить конфиг"}")
+        }
+    }
+
+    override suspend fun disconnect() {
+        if (state.value == VpnState.Idle) return
+        mutableState.value = VpnState.Disconnecting
+        app.startService(Intent(app, MihomoVpnService::class.java).setAction(MihomoVpnService.ACTION_STOP))
+    }
+
+    private fun onServiceState(intent: Intent) {
+        when (intent.getStringExtra(MihomoVpnService.EXTRA_STATE)) {
+            MihomoVpnService.STATE_CONNECTED -> {
+                val p = pending ?: return
+                scope.launch {
+                    val client = MihomoApi(p.controller, p.secret)
+                    // The core answers once the config is applied; normally right away.
+                    var tries = 0
+                    while (!client.ready() && tries++ < 50) delay(100)
+                    client.applyPicks(p.picks)
+                    version = client.version()
+                    api = client
+                    appPort = p.appPort
+                    mutableTraffic.value = Traffic()
+                    mutableState.value = VpnState.Connected(System.currentTimeMillis(), p.serverId)
+                    startTraffic(client)
+                }
+            }
+            MihomoVpnService.STATE_FAILED -> {
+                stopLocal()
+                mutableState.value = VpnState.Failed(intent.getStringExtra(MihomoVpnService.EXTRA_MESSAGE) ?: "mihomo не запустился")
+            }
+            MihomoVpnService.STATE_IDLE -> {
+                stopLocal()
+                if (state.value !is VpnState.Failed) mutableState.value = VpnState.Idle
+            }
+        }
+    }
+
+    private fun startTraffic(client: MihomoApi) {
+        trafficJob = scope.launch {
+            var upTotal = 0L
+            var downTotal = 0L
+            while (isActive) {
+                runCatching {
+                    client.traffic().collect { (up, down) ->
+                        upTotal += up
+                        downTotal += down
+                        mutableTraffic.value = Traffic(up, down, upTotal, downTotal)
+                    }
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    private fun stopLocal() {
+        trafficJob?.cancel()
+        trafficJob = null
+        api?.close()
+        api = null
+        appPort = null
+        mutableTraffic.value = Traffic()
+    }
+
+    /** Xray's geo files (already unpacked by [AndroidVpn]) are what mihomo reads in geodata mode. */
+    private fun copyGeoData() {
+        val src = File(app.filesDir, "assets")
+        val home = homeDir(app).apply { mkdirs() }
+        for ((from, to) in listOf("geoip.dat" to "GeoIP.dat", "geosite.dat" to "GeoSite.dat")) {
+            val s = File(src, from)
+            val d = File(home, to)
+            if (s.isFile && (!d.isFile || d.length() != s.length())) runCatching { s.copyTo(d, overwrite = true) }
+        }
+    }
+
+    override suspend fun healthCheck(url: String): Long = withContext(Dispatchers.IO) {
+        val port = appPort ?: return@withContext -1L
+        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port))
+        var best = -1L
+        repeat(2) {
+            val t0 = System.nanoTime()
+            val ok = runCatching {
+                val c = URI(url).toURL().openConnection(proxy) as HttpURLConnection
+                c.connectTimeout = 6000
+                c.readTimeout = 6000
+                c.instanceFollowRedirects = false
+                val code = c.responseCode
+                c.disconnect()
+                code in 200..399
+            }.getOrDefault(false)
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            if (ok && (best < 0 || ms < best)) best = ms
+        }
+        best
+    }
+
+    override suspend fun ping(server: Server, url: String): Long = -1
+
+    /** Clash-profile proxies can only be measured by a running core: through its controller when up. */
+    override suspend fun pingProfile(servers: List<Server>, profile: Profile, url: String, onResult: (String, Long) -> Unit) {
+        val client = api
+        servers.forEach { s -> onResult(s.id, client?.delay(s.name, url) ?: -1L) }
+    }
+
+    override fun coreVersion(): String = version?.let { "mihomo $it" } ?: "mihomo (Prizrak-Core)"
+
+    private fun freePort(): Int = java.net.ServerSocket(0).use { it.localPort }
+}

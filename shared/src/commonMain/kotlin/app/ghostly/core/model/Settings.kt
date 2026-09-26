@@ -10,6 +10,10 @@ enum class RoutingMode {
     GLOBAL,
 }
 
+/** Which core runs link servers. Xray-JSON servers always use Xray, Clash/mihomo YAML always mihomo. */
+@Serializable
+enum class CoreType { XRAY, MIHOMO }
+
 @Serializable
 enum class SplitMode { OFF, ONLY_SELECTED, BYPASS_SELECTED }
 
@@ -55,6 +59,7 @@ data class AppSettings(
     val customDns: String = "",
     val ipv6: Boolean = false,
     // --- tunnel
+    val core: CoreType = CoreType.XRAY,
     val mtu: Int = 1500,
     val mux: Boolean = false,
     val fragment: Boolean = false,
