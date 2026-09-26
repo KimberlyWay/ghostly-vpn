@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Ghostly" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ghost_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+    <color name="ghost_bg">#FF07050B</color>
+    <color name="ghost_accent">#FFA88DFF</color>
+</resources>

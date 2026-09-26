@@ -1,0 +1,566 @@
+package app.ghostly.ui.screens
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
+import androidx.compose.material.icons.rounded.Animation
+import androidx.compose.material.icons.rounded.AutoMode
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Cable
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.RocketLaunch
+import androidx.compose.material.icons.rounded.Savings
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import app.ghostly.core.GhostlyController
+import app.ghostly.core.model.AppSettings
+import app.ghostly.core.model.DesktopMode
+import app.ghostly.core.model.DnsPreset
+import app.ghostly.core.model.RoutingMode
+import app.ghostly.core.model.SplitMode
+import app.ghostly.core.model.ThemeAccent
+import app.ghostly.core.vpn.AppEntry
+import app.ghostly.ui.components.GhostMark
+import app.ghostly.ui.components.GhostSwitch
+import app.ghostly.ui.components.GlassCard
+import app.ghostly.ui.components.IconBubble
+import app.ghostly.ui.components.SectionTitle
+import app.ghostly.ui.components.Segmented
+import app.ghostly.ui.components.SettingRow
+import app.ghostly.ui.components.Spinner
+import app.ghostly.ui.components.ToggleRow
+import app.ghostly.ui.theme.Ghost
+
+private enum class Page { MAIN, ROUTING, DNS, APPS, PROXY, ADVANCED, ABOUT }
+
+const val GITHUB_URL = "https://github.com/Nelxi/ghostly-vpn"
+
+@Composable
+fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues) {
+    var page by rememberSaveable { mutableStateOf(Page.MAIN) }
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            val forward = targetState != Page.MAIN
+            (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn()) togetherWith
+                (slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut())
+        },
+    ) { p ->
+        val back = { page = Page.MAIN }
+        when (p) {
+            Page.MAIN -> MainSettings(controller, contentPadding) { page = it }
+            Page.ROUTING -> RoutingPage(controller, contentPadding, back)
+            Page.DNS -> DnsPage(controller, contentPadding, back)
+            Page.APPS -> AppsPage(controller, contentPadding, back)
+            Page.PROXY -> ProxyPage(controller, contentPadding, back)
+            Page.ADVANCED -> AdvancedPage(controller, contentPadding, back)
+            Page.ABOUT -> AboutPage(controller, contentPadding, back)
+        }
+    }
+}
+
+@Composable
+private fun PageScaffold(title: String, contentPadding: PaddingValues, onBack: (() -> Unit)?, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding).padding(horizontal = 18.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconBubble(Icons.AutoMirrored.Rounded.ArrowBack, onBack)
+                Spacer(Modifier.width(12.dp))
+            }
+            Text(title, style = MaterialTheme.typography.headlineMedium)
+        }
+        content()
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+@Composable
+private fun Group(content: @Composable () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth(), padding = 10.dp) { content() }
+}
+
+@Composable
+private fun Chevron() = Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Ghost.colors.ink3)
+
+// ============================================================================ main
+
+@Composable
+private fun MainSettings(controller: GhostlyController, contentPadding: PaddingValues, open: (Page) -> Unit) {
+    val s by controller.settings.collectAsState()
+    val c = Ghost.colors
+    val set = controller::updateSettings
+    PageScaffold("Настройки", contentPadding, null) {
+        SectionTitle("Подключение")
+        Group {
+            SettingRow("Маршрутизация", when (s.routingMode) {
+                RoutingMode.SMART -> "Умная: российские сайты напрямую"
+                RoutingMode.GLOBAL -> "Весь трафик через VPN"
+            }, Icons.AutoMirrored.Rounded.AltRoute, onClick = { open(Page.ROUTING) }) { Chevron() }
+            SettingRow("DNS", if (s.dns == DnsPreset.CUSTOM) s.customDns.ifBlank { "Свой" } else s.dns.title, Icons.Rounded.Dns, onClick = { open(Page.DNS) }) { Chevron() }
+            if (controller.platform.supportsPerAppSplit) {
+                SettingRow("Приложения", when (s.splitMode) {
+                    SplitMode.OFF -> "Все приложения через VPN"
+                    SplitMode.ONLY_SELECTED -> "Только выбранные: ${s.splitApps.size}"
+                    SplitMode.BYPASS_SELECTED -> "В обход VPN: ${s.splitApps.size}"
+                }, Icons.AutoMirrored.Rounded.CallSplit, onClick = { open(Page.APPS) }) { Chevron() }
+            }
+            if (controller.platform.isDesktop) {
+                SettingRow("Режим", null, Icons.Rounded.Cable)
+                Segmented(listOf(DesktopMode.TUN to "TUN (всё)", DesktopMode.SYSTEM_PROXY to "Системный прокси"), s.desktopMode, { m -> set { it.copy(desktopMode = m) } })
+                Spacer(Modifier.height(6.dp))
+            }
+            SettingRow(
+                "Локальный прокси",
+                if (!controller.platform.isDesktop && !s.localProxy) "Выключен"
+                else "SOCKS5 :${s.socksPort} · HTTP :${s.httpPort}" + if (s.proxyAuth) " · с паролем" else "",
+                Icons.Rounded.Cable, onClick = { open(Page.PROXY) },
+            ) { Chevron() }
+            ToggleRow("Блокировать рекламу", "Рекламные и трекинговые домены отсекаются на лету", s.blockAds, Icons.Rounded.Block) { v -> set { it.copy(blockAds = v) } }
+        }
+
+        SectionTitle("Поведение")
+        Group {
+            ToggleRow(
+                if (controller.platform.isDesktop) "Запуск вместе с системой" else "Включать при старте телефона",
+                if (controller.platform.isDesktop) "Ghostly стартует свёрнутым и сразу подключается"
+                else "VPN поднимется сам после перезагрузки — даже без открытия приложения",
+                s.startOnBoot, Icons.Rounded.RocketLaunch,
+            ) { v -> set { it.copy(startOnBoot = v) } }
+            ToggleRow("Автоподключение", "Подключаться при открытии приложения", s.autoConnect, Icons.Rounded.PowerSettingsNew) { v -> set { it.copy(autoConnect = v) } }
+            ToggleRow("Переподключение", "Восстанавливать туннель при смене сети", s.autoReconnect, Icons.Rounded.Refresh) { v -> set { it.copy(autoReconnect = v) } }
+            ToggleRow("Автосмена сервера", "Если сервер перестал отвечать — переключиться на самый быстрый", s.autoFailover, Icons.Rounded.SwapHoriz) { v -> set { it.copy(autoFailover = v) } }
+            ToggleRow("Сторож соединения", "Каждые 20 секунд проверяет, что трафик реально идёт, и сам меняет сервер, если нет", s.smartGuard, Icons.Rounded.Shield) { v -> set { it.copy(smartGuard = v) } }
+            ToggleRow("Беречь белые списки", "Сама уходит на белые списки при блокировках и возвращается на обычные серверы, как только интернет снова нормальный", s.saveWhitelist, Icons.Rounded.Savings) { v -> set { it.copy(saveWhitelist = v) } }
+            ToggleRow("Обновлять подписки", "Автоматически, как просит провайдер", s.autoUpdateSubs, Icons.Rounded.AutoMode) { v -> set { it.copy(autoUpdateSubs = v) } }
+            controller.platform.systemVpnSettings?.let { open ->
+                SettingRow("Kill switch", "Системная настройка: «Постоянная VPN» + «Блокировать соединения без VPN»", Icons.Rounded.Lock, onClick = open) { Chevron() }
+            }
+        }
+
+        SectionTitle("Внешний вид")
+        Group {
+            SettingRow("Акцент", null, Icons.Rounded.Palette) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeAccent.entries.forEach { a ->
+                        val col = Color(a.argb.toInt())
+                        Box(
+                            Modifier.size(26.dp).clip(CircleShape).background(col)
+                                .border(2.dp, if (s.accent == a) c.ink else Color.Transparent, CircleShape)
+                                .clickable { set { it.copy(accent = a) } },
+                            contentAlignment = Alignment.Center,
+                        ) { if (s.accent == a) Icon(Icons.Rounded.Check, null, tint = Color.Black.copy(alpha = 0.7f), modifier = Modifier.size(15.dp)) }
+                    }
+                }
+            }
+            ToggleRow("Меньше анимаций", "Спокойнее и экономнее для батареи", s.reduceMotion, Icons.Rounded.Animation) { v -> set { it.copy(reduceMotion = v) } }
+            ToggleRow("Вибрация", "Лёгкий отклик на нажатия", s.haptics, Icons.Rounded.Vibration) { v -> set { it.copy(haptics = v) } }
+        }
+
+        SectionTitle("Ещё")
+        Group {
+            SettingRow("Для продвинутых", "MTU, мультиплекс, фрагментация, IPv6, логи", Icons.Rounded.Tune, onClick = { open(Page.ADVANCED) }) { Chevron() }
+            SettingRow("О приложении", "Версия, ядро, исходный код", Icons.Rounded.Info, onClick = { open(Page.ABOUT) }) { Chevron() }
+        }
+    }
+}
+
+// ============================================================================ routing
+
+@Composable
+private fun RoutingPage(controller: GhostlyController, contentPadding: PaddingValues, back: () -> Unit) {
+    val s by controller.settings.collectAsState()
+    val set = controller::updateSettings
+    PageScaffold("Маршрутизация", contentPadding, back) {
+        Spacer(Modifier.height(12.dp))
+        Segmented(listOf(RoutingMode.SMART to "Умная", RoutingMode.GLOBAL to "Всё через VPN"), s.routingMode, { m -> set { it.copy(routingMode = m) } })
+        Text(
+            when (s.routingMode) {
+                RoutingMode.SMART -> "Госуслуги, банки, маркетплейсы и другие российские сайты открываются напрямую — быстрее и без капчи. Остальное идёт через VPN. Для подписок с собственными правилами используются правила провайдера."
+                RoutingMode.GLOBAL -> "Весь трафик, кроме локальной сети, идёт через VPN."
+            },
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(6.dp, 10.dp),
+        )
+        SectionTitle("Свои правила")
+        Text("По одному домену на строку: example.com, geosite:youtube, full:api.site.ru, regexp:…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 6.dp, bottom = 10.dp))
+        DomainListEditor("Напрямую", s.directDomains) { l -> set { it.copy(directDomains = l) } }
+        Spacer(Modifier.height(10.dp))
+        DomainListEditor("Через VPN", s.proxyDomains) { l -> set { it.copy(proxyDomains = l) } }
+        Spacer(Modifier.height(10.dp))
+        DomainListEditor("Блокировать", s.blockDomains) { l -> set { it.copy(blockDomains = l) } }
+    }
+}
+
+@Composable
+private fun DomainListEditor(title: String, value: List<String>, onChange: (List<String>) -> Unit) {
+    val c = Ghost.colors
+    var text by remember(value) { mutableStateOf(value.joinToString("\n")) }
+    GlassCard(Modifier.fillMaxWidth(), padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text("${value.size}", style = MaterialTheme.typography.labelMedium, color = c.ink3)
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.25f)).padding(12.dp)) {
+            if (text.isEmpty()) Text("пусто", style = MaterialTheme.typography.bodySmall)
+            BasicTextField(
+                text,
+                { t ->
+                    text = t
+                    onChange(t.lines().map { it.trim() }.filter { it.isNotEmpty() })
+                },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = c.ink, fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(c.accent),
+                modifier = Modifier.fillMaxWidth().height(96.dp),
+            )
+        }
+    }
+}
+
+// ============================================================================ dns
+
+@Composable
+private fun DnsPage(controller: GhostlyController, contentPadding: PaddingValues, back: () -> Unit) {
+    val s by controller.settings.collectAsState()
+    val c = Ghost.colors
+    PageScaffold("DNS", contentPadding, back) {
+        Text("DNS-запросы идут через туннель, провайдер их не видит.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(6.dp, 12.dp))
+        Group {
+            DnsPreset.entries.forEach { p ->
+                SettingRow(p.title, p.address, onClick = { controller.updateSettings { it.copy(dns = p) } }) {
+                    if (s.dns == p) Icon(Icons.Rounded.Check, null, tint = c.accent)
+                }
+            }
+        }
+        if (s.dns == DnsPreset.CUSTOM) {
+            Spacer(Modifier.height(12.dp))
+            GlassCard(Modifier.fillMaxWidth(), padding = 14.dp) {
+                Text("Адрес", style = MaterialTheme.typography.labelMedium, color = c.ink3)
+                Spacer(Modifier.height(6.dp))
+                BasicTextField(
+                    s.customDns, { v -> controller.updateSettings { it.copy(customDns = v) } }, singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.ink), cursorBrush = SolidColor(c.accent),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Например: https://dns.example/dns-query, tls://1.1.1.1 или 9.9.9.9", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+// ============================================================================ per-app
+
+@Composable
+private fun AppsPage(controller: GhostlyController, contentPadding: PaddingValues, back: () -> Unit) {
+    val s by controller.settings.collectAsState()
+    val c = Ghost.colors
+    var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
+    var showSystem by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) { apps = controller.platform.installedApps().sortedBy { it.label.lowercase() } }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
+        item {
+            Column(Modifier.padding(horizontal = 18.dp)) {
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconBubble(Icons.AutoMirrored.Rounded.ArrowBack, back)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Приложения", style = MaterialTheme.typography.headlineMedium)
+                }
+                Segmented(
+                    listOf(SplitMode.OFF to "Все", SplitMode.ONLY_SELECTED to "Только эти", SplitMode.BYPASS_SELECTED to "Кроме этих"),
+                    s.splitMode, { m -> controller.updateSettings { it.copy(splitMode = m) } },
+                )
+                Text(
+                    when (s.splitMode) {
+                        SplitMode.OFF -> "Все приложения работают через VPN."
+                        SplitMode.ONLY_SELECTED -> "Через VPN пойдут только отмеченные приложения."
+                        SplitMode.BYPASS_SELECTED -> "Отмеченные приложения будут работать напрямую — например, банки."
+                    },
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(6.dp, 10.dp),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.06f)).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Text("Поиск приложений", style = MaterialTheme.typography.bodyMedium, color = c.ink3)
+                        BasicTextField(query, { query = it }, singleLine = true, textStyle = MaterialTheme.typography.bodyMedium.copy(color = c.ink), cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth())
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text("Системные", style = MaterialTheme.typography.labelMedium, color = c.ink3)
+                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.clickable { showSystem = !showSystem }) { GhostSwitch(showSystem) }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+        val list = apps
+        if (list == null) {
+            item { Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { Spinner(c.accent, Modifier.size(28.dp)) } }
+        } else {
+            val shown = list.filter { (showSystem || !it.isSystem || it.packageName in s.splitApps) && (query.isBlank() || it.label.contains(query, true) || it.packageName.contains(query, true)) }
+                .sortedByDescending { it.packageName in s.splitApps }
+            items(shown, key = { it.packageName }) { app ->
+                val checked = app.packageName in s.splitApps
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        controller.updateSettings { st -> st.copy(splitApps = if (checked) st.splitApps - app.packageName else st.splitApps + app.packageName) }
+                    }.padding(horizontal = 22.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(c.accent.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                        Text(app.label.take(1).uppercase(), style = MaterialTheme.typography.titleSmall, color = c.accent)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(app.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(app.packageName, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Box(
+                        Modifier.size(24.dp).clip(RoundedCornerShape(8.dp))
+                            .background(if (checked) c.accent else Color.Transparent)
+                            .border(1.5.dp, if (checked) c.accent else c.ink3, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { if (checked) Icon(Icons.Rounded.Check, null, tint = c.accentInk, modifier = Modifier.size(16.dp)) }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+// ============================================================================ local proxy
+
+@Composable
+private fun ProxyPage(controller: GhostlyController, contentPadding: PaddingValues, back: () -> Unit) {
+    val s by controller.settings.collectAsState()
+    val c = Ghost.colors
+    val set = controller::updateSettings
+    PageScaffold("Локальный прокси", contentPadding, back) {
+        Text(
+            if (controller.platform.isDesktop) "SOCKS5 и HTTP-прокси на этом компьютере — для браузеров, Telegram, игр и программ, которые умеют работать через прокси."
+            else "SOCKS5 и HTTP-прокси на телефоне, пока VPN включён — например, для Telegram или приложений, которые нужно пустить через прокси.",
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(6.dp, 12.dp),
+        )
+        Group {
+            if (!controller.platform.isDesktop) {
+                ToggleRow("Включить", "Поднимать прокси вместе с VPN", s.localProxy, Icons.Rounded.PowerSettingsNew) { v -> set { it.copy(localProxy = v) } }
+            }
+            ToggleRow("Доступ из локальной сети", "Раздавать прокси другим устройствам в твоей Wi-Fi сети", s.allowLan, Icons.Rounded.Language) { v -> set { it.copy(allowLan = v) } }
+        }
+        SectionTitle("Порты")
+        Group {
+            Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PortField("SOCKS5", s.socksPort, Modifier.weight(1f)) { p -> set { it.copy(socksPort = p) } }
+                PortField("HTTP", s.httpPort, Modifier.weight(1f)) { p -> set { it.copy(httpPort = p) } }
+            }
+            if (s.socksPort == s.httpPort) Text("Порты должны отличаться", style = MaterialTheme.typography.bodySmall, color = c.bad, modifier = Modifier.padding(6.dp))
+        }
+        SectionTitle("Авторизация")
+        Group {
+            ToggleRow("Логин и пароль", "Чтобы чужие программы и устройства не пользовались твоим прокси", s.proxyAuth, Icons.Rounded.Lock) { v -> set { it.copy(proxyAuth = v) } }
+            if (s.proxyAuth) {
+                CredentialField("Логин", s.proxyUser, controller) { v -> set { it.copy(proxyUser = v) } }
+                Spacer(Modifier.height(8.dp))
+                CredentialField("Пароль", s.proxyPass, controller) { v -> set { it.copy(proxyPass = v) } }
+                Spacer(Modifier.height(6.dp))
+                SettingRow("Сгенерировать новые", "ghostly_… и случайный пароль", Icons.Rounded.Refresh, onClick = { controller.regenerateProxyCredentials() })
+            }
+        }
+        if (controller.platform.isDesktop) {
+            Text(
+                "Системный прокси Windows/macOS ходит через отдельный внутренний порт без пароля — браузеры не будут спрашивать логин.",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(6.dp, 12.dp),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        val lan = remember(s.allowLan) { if (s.allowLan) controller.platform.lanAddress() else null }
+        val host = if (s.allowLan) lan ?: "адрес не найден — подключись к Wi-Fi" else "127.0.0.1"
+        if (s.allowLan) {
+            Text(
+                "Для других устройств в твоей сети адрес прокси — $host. Для программ на этом устройстве — 127.0.0.1.",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(6.dp, 0.dp, 6.dp, 10.dp),
+            )
+        }
+        val auth = if (s.proxyAuth) "${s.proxyUser}:${s.proxyPass}@" else ""
+        val link = "socks5://$auth$host:${s.socksPort}"
+        GlassCard(Modifier.fillMaxWidth(), padding = 14.dp, onClick = { controller.platform.copyToClipboard(link) }) {
+            Text("Нажми, чтобы скопировать", style = MaterialTheme.typography.labelSmall, color = c.ink3)
+            Text(link, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, color = c.ink))
+        }
+    }
+}
+
+@Composable
+private fun PortField(label: String, value: Int, modifier: Modifier, onChange: (Int) -> Unit) {
+    val c = Ghost.colors
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    val valid = text.toIntOrNull()?.let { it in 1024..65535 } == true
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.22f))
+            .border(1.dp, if (valid) c.line else c.bad.copy(alpha = 0.6f), RoundedCornerShape(14.dp)).padding(12.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = c.ink3)
+        BasicTextField(
+            text,
+            { t ->
+                text = t.filter { it.isDigit() }.take(5)
+                text.toIntOrNull()?.takeIf { it in 1024..65535 }?.let(onChange)
+            },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.titleLarge.copy(color = c.ink, fontFamily = FontFamily.Monospace),
+            cursorBrush = SolidColor(c.accent),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun CredentialField(label: String, value: String, controller: GhostlyController, onChange: (String) -> Unit) {
+    val c = Ghost.colors
+    var text by remember(value) { mutableStateOf(value) }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.22f))
+            .border(1.dp, c.line, RoundedCornerShape(14.dp)).padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = c.ink3)
+            BasicTextField(
+                text,
+                { t ->
+                    text = t.filterNot { it.isWhitespace() || it == ':' || it == '@' }.take(64)
+                    if (text.isNotEmpty()) onChange(text)
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.ink, fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        IconBubble(Icons.Rounded.ContentCopy, { controller.platform.copyToClipboard(text) }, size = 36.dp)
+    }
+}
+
+// ============================================================================ advanced
+
+@Composable
+private fun AdvancedPage(controller: GhostlyController, contentPadding: PaddingValues, back: () -> Unit) {
+    val s by controller.settings.collectAsState()
+    val set = controller::updateSettings
+    PageScaffold("Для продвинутых", contentPadding, back) {
+        SectionTitle("Туннель")
+        Group {
+            ToggleRow("Мультиплекс (mux)", "Несколько соединений в одном — меньше рукопожатий. Не для Vision/XHTTP", s.mux, Icons.Rounded.Layers) { v -> set { it.copy(mux = v) } }
+            ToggleRow("Фрагментация TLS", "Режет ClientHello на части — помогает против DPI для TLS-серверов", s.fragment, Icons.Rounded.Code) { v -> set { it.copy(fragment = v) } }
+            ToggleRow("Сниффинг", "Определять домен по трафику для точной маршрутизации", s.sniffing, Icons.Rounded.Speed) { v -> set { it.copy(sniffing = v) } }
+            ToggleRow("IPv6", "Пускать IPv6 через туннель", s.ipv6, Icons.Rounded.Language) { v -> set { it.copy(ipv6 = v) } }
+            SettingRow("MTU", "${s.mtu}", Icons.Rounded.Tune)
+            Segmented(listOf(1280 to "1280", 1400 to "1400", 1500 to "1500", 9000 to "9000"), s.mtu, { v -> set { it.copy(mtu = v) } })
+            Spacer(Modifier.height(6.dp))
+        }
+        SectionTitle("Пинг")
+        Group {
+            Segmented(
+                listOf(
+                    "https://www.gstatic.com/generate_204" to "Google",
+                    "https://cp.cloudflare.com/generate_204" to "Cloudflare",
+                    "https://www.apple.com/library/test/success.html" to "Apple",
+                ),
+                s.pingUrl, { v -> set { it.copy(pingUrl = v) } },
+            )
+        }
+        SectionTitle("Журнал ядра")
+        Group {
+            Segmented(listOf("none" to "Выкл", "error" to "Ошибки", "warning" to "Важное", "info" to "Всё", "debug" to "Debug"), s.logLevel, { v -> set { it.copy(logLevel = v) } })
+        }
+    }
+}
+
+// ============================================================================ about
+
+@Composable
+private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValues, back: () -> Unit) {
+    val c = Ghost.colors
+    PageScaffold("О приложении", contentPadding, back) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            GhostMark(Modifier.size(110.dp))
+            Spacer(Modifier.height(10.dp))
+            Text("Ghostly VPN", style = MaterialTheme.typography.headlineMedium)
+            Text("версия ${controller.platform.appVersion}", style = MaterialTheme.typography.bodySmall)
+        }
+        Group {
+            SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
+            SettingRow("Исходный код", "Открытый проект на GitHub · GPL-3.0", Icons.Rounded.Code, onClick = { controller.platform.openUrl(GITHUB_URL) }) { Chevron() }
+            SettingRow("Сайт", "ghostlinknex.online", Icons.Rounded.Language, onClick = { controller.platform.openUrl("https://ghostlinknex.online") }) { Chevron() }
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Text("Сделано с ", style = MaterialTheme.typography.bodySmall)
+            Icon(Icons.Rounded.Favorite, null, tint = c.accent, modifier = Modifier.size(12.dp))
+            Text(" · Xray-core, Compose Multiplatform", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}

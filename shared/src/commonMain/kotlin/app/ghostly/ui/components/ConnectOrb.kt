@@ -1,0 +1,393 @@
+package app.ghostly.ui.components
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import app.ghostly.ui.theme.Ghost
+import app.ghostly.ui.theme.LocalReduceMotion
+import app.ghostly.ui.theme.Motion
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
+
+enum class OrbState { IDLE, CONNECTING, CONNECTED, ERROR }
+
+/**
+ * The big connect button: a liquid-glass orb with a living ghost inside.
+ * Idle — the ghost dozes, soft "tap me" pulses; connecting — a comet ring spins and dust speeds up;
+ * connected — the ring closes into an aurora, energy waves roll out, the ghost smiles and floats.
+ * On desktop the ghost's eyes follow the cursor.
+ */
+@Composable
+fun ConnectOrb(state: OrbState, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 236.dp) {
+    val c = Ghost.colors
+    val reduce = LocalReduceMotion.current
+    val interaction = remember { MutableInteractionSource() }
+    val t = rememberInfiniteTransition()
+
+    val spin by t.animateFloat(0f, 360f, infiniteRepeatable(tween(if (state == OrbState.CONNECTING) 1000 else 16_000, easing = LinearEasing)))
+    val orbit by t.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(if (state == OrbState.CONNECTING) 2600 else 11_000, easing = LinearEasing)))
+    val swirl by t.animateFloat(0f, 360f, infiniteRepeatable(tween(9000, easing = LinearEasing)))
+    val wave by t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (reduce) 4200 else 2600, easing = LinearEasing)))
+    val breath by t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (reduce) 5200 else 3000, easing = Motion.EaseInOut), RepeatMode.Reverse))
+    val floatY by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = Motion.EaseInOut), RepeatMode.Reverse))
+    val blink by t.animateFloat(
+        1f, 1f,
+        infiniteRepeatable(keyframes {
+            durationMillis = 4800
+            1f at 0
+            1f at 4300
+            0.08f at 4400
+            1f at 4520
+        }),
+    )
+
+    val on by animateFloatAsState(if (state == OrbState.CONNECTED) 1f else 0f, tween(900, easing = Motion.Ease))
+    val busy by animateFloatAsState(if (state == OrbState.CONNECTING) 1f else 0f, Motion.quick(400))
+    val err by animateFloatAsState(if (state == OrbState.ERROR) 1f else 0f, Motion.quick(400))
+
+    // Cursor tracking: eyes look at it, the orb leans in a touch.
+    var pointer by remember { mutableStateOf<Offset?>(null) }
+    var hover by remember { mutableStateOf(false) }
+    val hoverA by animateFloatAsState(if (hover) 1f else 0f, Motion.quick(300))
+    val lookTarget = pointer?.let { p -> Offset(p.x.coerceIn(-1f, 1f), p.y.coerceIn(-1f, 1f)) }
+        ?: Offset(0.18f * sin(orbit * 0.5f), 0.12f * cos(orbit * 0.7f))
+    val look by animateOffsetAsState(lookTarget, spring(dampingRatio = 0.6f, stiffness = 120f))
+
+    // Every tap squishes the ghost and makes it giggle — it's a button, but a cute one.
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val squish = remember { Animatable(0f) }
+    var expr by remember { mutableStateOf(GhostExpr.NONE) }
+    val tap: () -> Unit = {
+        onClick()
+        expr = listOf(GhostExpr.GIGGLE, GhostExpr.WINK, GhostExpr.SURPRISED).random()
+        scope.launch {
+            squish.snapTo(1f)
+            squish.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 300f))
+        }
+        scope.launch {
+            kotlinx.coroutines.delay(900)
+            expr = GhostExpr.NONE
+        }
+    }
+
+    // A ring of light bursts outward every time we become connected.
+    val burst = remember { Animatable(1f) }
+    LaunchedEffect(state) {
+        if (state == OrbState.CONNECTED) {
+            burst.snapTo(0f)
+            burst.animateTo(1f, tween(1400, easing = Motion.Ease))
+        }
+    }
+
+    val dust = remember {
+        val r = Random(3)
+        List(18) { floatArrayOf(r.nextFloat() * 6.28f, 0.84f + r.nextFloat() * 0.16f, 0.5f + r.nextFloat(), 0.7f + r.nextFloat() * 1.6f, r.nextFloat()) }
+    }
+
+    val accent = lerp(lerp(c.accent, c.ok, on * 0.5f), c.bad, err)
+    val deep = lerp(c.accent2, c.bad, err * 0.6f)
+
+    Box(
+        modifier
+            .size(size)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        val p = e.changes.first().position
+                        val half = this.size.width / 2f
+                        when (e.type) {
+                            PointerEventType.Exit -> { hover = false; pointer = null }
+                            else -> {
+                                // Outside the orb the eyes still follow, but more lazily.
+                                pointer = Offset((p.x - half) / half, (p.y - half) / half) * 0.8f
+                                val d = sqrt((p.x - half) * (p.x - half) + (p.y - half) * (p.y - half))
+                                hover = d < half * 0.8f
+                            }
+                        }
+                    }
+                }
+            }
+            .pressScale(interaction, 0.93f, hover = 1.03f)
+            .clip(CircleShape)
+            .clickable(interactionSource = interaction, indication = null, onClick = tap),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val r = this.size.minDimension / 2
+            val center = this.center
+
+            // 1. Bloom
+            val bloom = 0.20f + 0.10f * breath + 0.30f * on + 0.10f * hoverA
+            drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = bloom), accent.copy(alpha = bloom * 0.3f), Color.Transparent), center, r), r)
+
+            // 2. Waves: gentle invitation pulses when idle, steady energy rings when connected.
+            val waveCount = 3
+            for (i in 0 until waveCount) {
+                val p = (wave + i.toFloat() / waveCount) % 1f
+                val alpha = (1f - p) * (0.10f * (1f - on) * (1f - busy) + 0.32f * on)
+                if (alpha > 0.005f) drawCircle(accent.copy(alpha = alpha), r * (0.70f + 0.30f * p), style = Stroke(1.5.dp.toPx()))
+            }
+            if (burst.value < 1f) {
+                drawCircle(Color.White.copy(alpha = (1f - burst.value) * 0.6f), r * (0.66f + 0.34f * burst.value), style = Stroke(4.dp.toPx() * (1f - burst.value) + 1f))
+            }
+
+            // 3. Orbiting dust
+            dust.forEach { d ->
+                val a = d[0] + orbit * d[2] * (if (d[4] > 0.5f) 1f else -1f)
+                val rr = r * d[1] * (0.92f + 0.03f * sin(orbit * 3 + d[0]))
+                val pos = center + Offset(cos(a) * rr, sin(a) * rr * 0.96f)
+                val alpha = (0.25f + 0.55f * maxOf(on, busy)) * (0.4f + 0.6f * sin(orbit * 4 + d[0]).let { it * it })
+                drawCircle(lerp(accent, Color.White, d[4] * 0.6f).copy(alpha = alpha), d[3].dp.toPx(), pos)
+            }
+
+            // 4. Liquid glass disc with a gently wobbling rim.
+            val discR = r * 0.70f
+            val wobble = Path().apply {
+                val n = 90
+                for (i in 0..n) {
+                    val a = (i.toFloat() / n) * 2 * PI.toFloat()
+                    val k = 1f + (0.012f + 0.01f * hoverA + 0.006f * busy) * sin(a * 3 + orbit * 2) + 0.008f * sin(a * 5 - orbit * 3)
+                    val x = center.x + cos(a) * discR * k
+                    val y = center.y + sin(a) * discR * k
+                    if (i == 0) moveTo(x, y) else lineTo(x, y)
+                }
+                close()
+            }
+            drawPath(
+                wobble,
+                Brush.radialGradient(
+                    listOf(Color.White.copy(alpha = 0.10f + 0.05f * on), deep.copy(alpha = 0.26f + 0.2f * on), Color(0xFF0B0812).copy(alpha = 0.94f)),
+                    center = center - Offset(discR * 0.25f, discR * 0.35f), radius = discR * 1.6f,
+                ),
+            )
+            // Aurora swirl inside the glass
+            clipPath(wobble) {
+                rotate(swirl, center) {
+                    drawCircle(Brush.radialGradient(listOf(accent.copy(alpha = 0.30f * (0.35f + 0.65f * on)), Color.Transparent), center + Offset(discR * 0.45f, 0f), discR * 0.8f), discR * 0.8f, center + Offset(discR * 0.45f, 0f))
+                    drawCircle(Brush.radialGradient(listOf(Color(0xFFFF9AC8).copy(alpha = 0.16f * (0.3f + 0.7f * on)), Color.Transparent), center - Offset(discR * 0.5f, discR * 0.2f), discR * 0.7f), discR * 0.7f, center - Offset(discR * 0.5f, discR * 0.2f))
+                }
+                // Specular highlight
+                drawArc(
+                    Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.Transparent), startY = center.y - discR, endY = center.y - discR * 0.4f),
+                    startAngle = 200f, sweepAngle = 80f, useCenter = false,
+                    topLeft = center - Offset(discR * 0.86f, discR * 0.86f), size = Size(discR * 1.72f, discR * 1.72f),
+                    style = Stroke(discR * 0.06f, cap = StrokeCap.Round),
+                )
+            }
+            drawPath(wobble, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.32f), Color.White.copy(alpha = 0.03f)), startY = center.y - discR, endY = center.y + discR), style = Stroke(1.2.dp.toPx()))
+
+            // 5. Ring: faint track + conic light. Connecting shows a comet arc.
+            val ringR = r * 0.80f
+            val stroke = 3.2.dp.toPx()
+            drawCircle(Color.White.copy(alpha = 0.06f), ringR, style = Stroke(stroke))
+            rotate(spin, center) {
+                val sweep = Brush.sweepGradient(listOf(Color.Transparent, deep.copy(alpha = 0.7f), accent, Color.White.copy(alpha = 0.9f), Color.Transparent), center)
+                val arc = 360f * (0.18f + 0.82f * on) * (1f - busy) + 110f * busy
+                drawArc(
+                    sweep, startAngle = -arc / 2, sweepAngle = arc.coerceAtLeast(40f), useCenter = false,
+                    topLeft = center - Offset(ringR, ringR), size = Size(ringR * 2, ringR * 2),
+                    style = Stroke(stroke + 1.5.dp.toPx() * on, cap = StrokeCap.Round),
+                    alpha = 0.35f + 0.65f * maxOf(on, busy, 0.25f + 0.2f * breath + 0.3f * hoverA),
+                )
+            }
+
+            // 6. The ghost
+            val gh = discR * 1.02f
+            val bob = (if (reduce) 1.5f else 5f).dp.toPx() * (floatY - 0.5f) * (0.4f + 0.6f * on)
+            translate(center.x - gh / 2 + look.x * 3.dp.toPx(), center.y - gh / 2 + bob + look.y * 2.dp.toPx() - squish.value * gh * 0.06f) {
+                scale(1f + 0.14f * squish.value, 1f - 0.14f * squish.value, Offset(gh / 2, gh * 0.82f)) {
+                    drawGhost(gh, blink, on, err, accent, sleepy = if (expr != GhostExpr.NONE) 0f else (1f - maxOf(on, busy, hoverA * 0.9f)), look = look, expr = expr)
+                }
+            }
+        }
+    }
+}
+
+/** Ghost glyph in a [s]×[s] box. [look] (-1..1) moves the pupils. */
+fun DrawScope.drawGhost(
+    s: Float, blink: Float, happy: Float, sad: Float, accent: Color, sleepy: Float,
+    look: Offset = Offset.Zero, expr: GhostExpr = GhostExpr.NONE,
+) {
+    val w = s * 0.62f
+    val left = (s - w) / 2
+    val top = s * 0.14f
+    val bottom = s * 0.80f
+    val body = Path().apply {
+        moveTo(left, top + w / 2)
+        arcTo(Rect(left, top, left + w, top + w), 180f, 180f, false)
+        lineTo(left + w, bottom)
+        // Three round lobes along the hem
+        val scallop = w / 3
+        for (i in 0 until 3) {
+            val x0 = left + w - i * scallop
+            val x1 = x0 - scallop
+            quadraticTo((x0 + x1) / 2, bottom + scallop * 0.62f, x1, bottom)
+        }
+        close()
+    }
+    drawPath(body, Brush.verticalGradient(listOf(Color.White, lerp(Color(0xFFE9E2FF), accent, 0.18f)), startY = top, endY = bottom))
+    drawPath(body, Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(alpha = 0.16f)), startX = left + w * 0.45f, endX = left + w))
+
+    val eyeY = top + w * 0.50f + look.y * w * 0.04f
+    val eyeDx = w * 0.19f
+    val eyeW = w * 0.13f
+    val openH = w * 0.19f
+    val ink = Color(0xFF1B1030)
+    val lineW = w * 0.04f
+
+    fun arcEye(cx: Float) {
+        // "^" — squeezed happy eye
+        val p = Path().apply {
+            moveTo(cx - eyeW * 0.75f, eyeY + eyeW * 0.25f)
+            quadraticTo(cx, eyeY - eyeW * 0.9f, cx + eyeW * 0.75f, eyeY + eyeW * 0.25f)
+        }
+        drawPath(p, ink, style = Stroke(lineW, cap = StrokeCap.Round))
+    }
+
+    fun spiralEye(cx: Float) {
+        val p = Path()
+        val turns = 2.2f
+        val n = 40
+        for (i in 0..n) {
+            val t = i.toFloat() / n
+            val a = t * turns * 2 * PI.toFloat() + look.x * 3f
+            val r = eyeW * 0.85f * t
+            val x = cx + cos(a) * r
+            val y = eyeY + sin(a) * r
+            if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+        }
+        drawPath(p, ink, style = Stroke(lineW * 0.75f, cap = StrokeCap.Round))
+    }
+
+    fun roundEye(cx: Float, scale: Float) {
+        val h = (openH * scale * (1f - 0.72f * sleepy)) * blink
+        drawRoundRect(ink, Offset(cx - eyeW * scale / 2, eyeY - h / 2), Size(eyeW * scale, h.coerceAtLeast(1.2f)), CornerRadius(eyeW * scale / 2, eyeW * scale / 2))
+        if (h > openH * 0.5f) drawCircle(Color.White.copy(alpha = 0.9f), eyeW * scale * 0.18f, Offset(cx + eyeW * 0.16f, eyeY - h * 0.22f))
+    }
+
+    val leftX = s / 2 - eyeDx + look.x * w * 0.05f
+    val rightX = s / 2 + eyeDx + look.x * w * 0.05f
+    when (expr) {
+        GhostExpr.NONE -> { roundEye(leftX, 1f); roundEye(rightX, 1f) }
+        GhostExpr.GIGGLE, GhostExpr.LOVE -> { arcEye(leftX); arcEye(rightX) }
+        GhostExpr.WINK -> { roundEye(leftX, 1f); arcEye(rightX) }
+        GhostExpr.SURPRISED -> { roundEye(leftX, 1.3f); roundEye(rightX, 1.3f) }
+        GhostExpr.DIZZY -> { spiralEye(leftX); spiralEye(rightX) }
+    }
+
+    val mx = s / 2 + look.x * w * 0.04f
+    val blushA = when (expr) {
+        GhostExpr.GIGGLE, GhostExpr.LOVE, GhostExpr.WINK -> 0.7f
+        GhostExpr.NONE -> 0.45f * happy
+        else -> 0.3f
+    }
+    if (blushA > 0.01f) {
+        for (dx in floatArrayOf(-eyeDx * 1.55f, eyeDx * 1.55f)) {
+            drawCircle(Color(0xFFFF9AC8).copy(alpha = blushA), w * 0.07f, Offset(s / 2 + dx + look.x * w * 0.03f, eyeY + w * 0.16f))
+        }
+    }
+    when {
+        expr == GhostExpr.SURPRISED -> drawOval(ink, Offset(mx - w * 0.04f, eyeY + w * 0.15f), Size(w * 0.08f, w * 0.1f))
+        expr == GhostExpr.DIZZY -> {
+            val wave = Path().apply {
+                moveTo(mx - w * 0.09f, eyeY + w * 0.2f)
+                quadraticTo(mx - w * 0.045f, eyeY + w * 0.15f, mx, eyeY + w * 0.2f)
+                quadraticTo(mx + w * 0.045f, eyeY + w * 0.25f, mx + w * 0.09f, eyeY + w * 0.2f)
+            }
+            drawPath(wave, ink, style = Stroke(w * 0.03f, cap = StrokeCap.Round))
+        }
+        expr != GhostExpr.NONE -> {
+            // Open laughing mouth
+            val mouth = Path().apply {
+                moveTo(mx - w * 0.09f, eyeY + w * 0.16f)
+                quadraticTo(mx, eyeY + w * 0.32f, mx + w * 0.09f, eyeY + w * 0.16f)
+                close()
+            }
+            drawPath(mouth, ink)
+            drawCircle(Color(0xFFFF7FA8), w * 0.035f, Offset(mx, eyeY + w * 0.215f))
+        }
+        happy > 0.01f -> {
+            val mouth = Path().apply {
+                moveTo(mx - w * 0.08f, eyeY + w * 0.17f)
+                quadraticTo(mx, eyeY + w * (0.17f + 0.10f * happy), mx + w * 0.08f, eyeY + w * 0.17f)
+            }
+            drawPath(mouth, ink.copy(alpha = happy), style = Stroke(w * 0.035f, cap = StrokeCap.Round))
+        }
+        sad > 0.01f -> drawCircle(ink.copy(alpha = sad), w * 0.045f, Offset(s / 2, eyeY + w * 0.2f), style = Stroke(w * 0.03f))
+    }
+    if (sleepy > 0.6f && sad < 0.1f && expr == GhostExpr.NONE) {
+        val a = (sleepy - 0.6f) / 0.4f
+        val zx = left + w * 1.02f
+        val zy = top + w * 0.05f
+        val z = w * 0.12f
+        val zPath = Path().apply { moveTo(zx, zy); lineTo(zx + z, zy); lineTo(zx, zy + z); lineTo(zx + z, zy + z) }
+        drawPath(zPath, Color.White.copy(alpha = 0.55f * a), style = Stroke(w * 0.025f, cap = StrokeCap.Round))
+    }
+}
+
+enum class GhostExpr { NONE, GIGGLE, WINK, SURPRISED, LOVE, DIZZY }
+
+/** Tiny ghost for headers and empty states — pokeable. */
+@Composable
+fun GhostMark(modifier: Modifier = Modifier, happy: Float = 1f, pokeable: Boolean = true) {
+    if (pokeable) {
+        PokeGhost(modifier, happy)
+        return
+    }
+    val c = Ghost.colors
+    val t = rememberInfiniteTransition()
+    val bob by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2400, easing = Motion.EaseInOut), RepeatMode.Reverse))
+    Canvas(modifier) {
+        translate(0f, (bob - 0.5f) * size.height * 0.05f) {
+            drawGhost(size.minDimension, 1f, happy, 0f, c.accent, sleepy = 0f)
+        }
+    }
+}

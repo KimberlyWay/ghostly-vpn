@@ -1,0 +1,87 @@
+package app.ghostly.core.model
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class RoutingMode {
+    /** Provider rules as sent; for plain links: Russian sites + LAN direct, rest via VPN. */
+    SMART,
+    /** Everything through the VPN except LAN. */
+    GLOBAL,
+}
+
+@Serializable
+enum class SplitMode { OFF, ONLY_SELECTED, BYPASS_SELECTED }
+
+@Serializable
+enum class DesktopMode { TUN, SYSTEM_PROXY }
+
+@Serializable
+enum class DnsPreset(val title: String, val address: String?) {
+    PROVIDER("Как у провайдера", null),
+    CLOUDFLARE("Cloudflare", "https://1.1.1.1/dns-query"),
+    GOOGLE("Google", "https://8.8.8.8/dns-query"),
+    QUAD9("Quad9", "https://9.9.9.9/dns-query"),
+    ADGUARD("AdGuard (без рекламы)", "https://94.140.14.14/dns-query"),
+    CUSTOM("Свой", null),
+}
+
+@Serializable
+enum class ThemeAccent(val argb: Long) {
+    GHOST(0xFFA88DFF),
+    MINT(0xFF8FE3C0),
+    SAKURA(0xFFFF9AC8),
+    SKY(0xFF8CC8FF),
+    SUNSET(0xFFFFB38A),
+}
+
+@Serializable
+data class AppSettings(
+    // --- routing
+    val routingMode: RoutingMode = RoutingMode.SMART,
+    val blockAds: Boolean = false,
+    val directDomains: List<String> = emptyList(),
+    val proxyDomains: List<String> = emptyList(),
+    val blockDomains: List<String> = emptyList(),
+    // --- dns
+    val dns: DnsPreset = DnsPreset.PROVIDER,
+    val customDns: String = "",
+    val ipv6: Boolean = false,
+    // --- tunnel
+    val mtu: Int = 1500,
+    val mux: Boolean = false,
+    val fragment: Boolean = false,
+    val sniffing: Boolean = true,
+    // --- per-app (Android)
+    val splitMode: SplitMode = SplitMode.OFF,
+    val splitApps: Set<String> = emptySet(),
+    // --- desktop
+    val desktopMode: DesktopMode = DesktopMode.SYSTEM_PROXY,
+    val socksPort: Int = 10808,
+    val httpPort: Int = 10809,
+    val allowLan: Boolean = false,
+    /** Local SOCKS/HTTP inbounds on phones (for Telegram proxy etc.); always on in desktop proxy mode. */
+    val localProxy: Boolean = false,
+    /** Login/password on the local proxies. Generated on first run: ghostly_xxxxxx + random password. */
+    val proxyAuth: Boolean = true,
+    val proxyUser: String = "",
+    val proxyPass: String = "",
+    // --- behaviour
+    val autoConnect: Boolean = false,
+    /** Bring the tunnel up when the device boots (Android BOOT_COMPLETED / desktop autostart). */
+    val startOnBoot: Boolean = false,
+    val autoReconnect: Boolean = true,
+    val autoFailover: Boolean = true,
+    /** Watch the tunnel while connected; switch servers when traffic stops passing. */
+    val smartGuard: Boolean = true,
+    /** Leave white-list servers as soon as normal internet is back (their traffic is scarce). */
+    val saveWhitelist: Boolean = true,
+    val autoUpdateSubs: Boolean = true,
+    val pingUrl: String = "https://www.gstatic.com/generate_204",
+    val logLevel: String = "warning",
+    // --- look & feel
+    val accent: ThemeAccent = ThemeAccent.GHOST,
+    val haptics: Boolean = true,
+    val reduceMotion: Boolean = false,
+    val language: String = "system",
+)

@@ -1,0 +1,384 @@
+package app.ghostly.ui.screens
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.NetworkPing
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import app.ghostly.core.GhostlyController
+import app.ghostly.core.model.Ping
+import app.ghostly.core.model.Profile
+import app.ghostly.core.model.Server
+import app.ghostly.ui.Format
+import app.ghostly.ui.components.GhostMark
+import app.ghostly.ui.components.IconBubble
+import app.ghostly.ui.components.PingPill
+import app.ghostly.ui.components.Spinner
+import app.ghostly.ui.components.Tag
+import app.ghostly.ui.components.pressScale
+import app.ghostly.ui.components.spotlight
+import app.ghostly.ui.components.appear
+import app.ghostly.ui.protocolLabel
+import app.ghostly.ui.theme.Ghost
+import app.ghostly.ui.theme.Motion
+import app.ghostly.ui.title
+import app.ghostly.ui.transportLabel
+
+private enum class Sort { LIST, PING, NAME }
+
+/**
+ * @param onPicked called after a tap selects a server (the picker sheet closes itself with it).
+ */
+@Composable
+fun ServersScreen(
+    controller: GhostlyController,
+    contentPadding: PaddingValues,
+    onAdd: () -> Unit,
+    onPicked: () -> Unit = {},
+    showHeader: Boolean = true,
+    compact: Boolean = false,
+) {
+    CompositionLocalProvider(LocalListPad provides if (compact) 12.dp else 18.dp) {
+        ServersList(controller, contentPadding, onAdd, onPicked, showHeader)
+    }
+}
+
+/** Horizontal gutter of the list: tighter inside the desktop side panel. */
+private val LocalListPad = staticCompositionLocalOf { 18.dp }
+
+@Composable
+private fun ServersList(
+    controller: GhostlyController,
+    contentPadding: PaddingValues,
+    onAdd: () -> Unit,
+    onPicked: () -> Unit,
+    showHeader: Boolean,
+) {
+    val c = Ghost.colors
+    val profiles by controller.profiles.collectAsState()
+    val pings by controller.pings.collectAsState()
+    val pinging by controller.pinging.collectAsState()
+    val refreshing by controller.refreshing.collectAsState()
+    val selected by controller.selectedServerId.collectAsState()
+    val favorites by controller.favorites.collectAsState()
+
+    var query by rememberSaveable { mutableStateOf("") }
+    var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
+    var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
+    // Rows animate in once; after that (scrolling back, recycling) they just appear.
+    val seen = remember { HashSet<String>() }
+
+    fun matches(s: Server) = query.isBlank() || s.name.contains(query.trim(), ignoreCase = true) || s.protocol.contains(query.trim(), true)
+    fun sorted(list: List<Server>): List<Server> = when (sort) {
+        Sort.LIST -> list
+        Sort.NAME -> list.sortedBy { it.name.lowercase() }
+        Sort.PING -> list.sortedWith(compareBy({ !it.isAuto }, { pings[it.id]?.takeIf(Ping::ok)?.ms ?: Long.MAX_VALUE }))
+    }
+    val pick: (Server) -> Unit = { s ->
+        controller.haptic()
+        controller.select(s.id)
+        onPicked()
+    }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
+        if (showHeader) item {
+            Row(Modifier.fillMaxWidth().padding(start = LocalListPad.current, end = LocalListPad.current, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Серверы", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                IconBubble(Icons.Rounded.Add, onAdd, tint = c.accent)
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SearchField(query, { query = it }, Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                var sortMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconBubble(Icons.AutoMirrored.Rounded.Sort, { sortMenu = true }, active = sort != Sort.LIST)
+                    DropdownMenu(sortMenu, { sortMenu = false }) {
+                        listOf(Sort.LIST to "Как в подписке", Sort.PING to "По пингу", Sort.NAME to "По имени").forEach { (v, l) ->
+                            DropdownMenuItem(text = { Text(l) }, onClick = { sort = v; sortMenu = false },
+                                trailingIcon = { if (sort == v) Icon(Icons.Rounded.CheckCircle, null, tint = c.accent) })
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                IconBubble(Icons.Rounded.NetworkPing, { controller.haptic(); controller.pingAll() }, active = pinging.isNotEmpty())
+            }
+        }
+
+        if (profiles.isEmpty()) item { EmptyServers(onAdd) }
+
+        // Quick pick: the fastest server right now.
+        val best = controller.bestServer()
+        if (best != null && query.isBlank()) item {
+            BestRow(best, pings[best.id]?.ms) { pick(best) }
+        }
+
+        val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) }
+        if (favs.isNotEmpty()) {
+            item { GroupLabel("Избранное", Icons.Rounded.Star) }
+            items(sorted(favs), key = { "fav:" + it.id }) { s ->
+                ServerRow(s, s.id == selected, pings[s.id], s.id in pinging, true, controller, Modifier.animateItem()) { pick(s) }
+            }
+        }
+
+        profiles.forEach { profile ->
+            val list = sorted(profile.servers.filter(::matches))
+            item(key = "profile:" + profile.id) {
+                ProfileHeader(profile, profile.id in collapsed, profile.id in refreshing, controller) {
+                    collapsed = if (profile.id in collapsed) collapsed - profile.id else collapsed + profile.id
+                }
+            }
+            if (profile.id !in collapsed) {
+                itemsIndexed(list, key = { _, it -> it.id }) { i, s ->
+                    val animate = remember(s.id) { seen.add(s.id) && i < 12 }
+                    ServerRow(s, s.id == selected, pings[s.id], s.id in pinging, s.id in favorites, controller, Modifier.appear(i, enabled = animate).animateItem()) { pick(s) }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier) {
+    val c = Ghost.colors
+    Row(
+        modifier.height(42.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.06f))
+            .border(1.dp, c.line, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Search, null, tint = c.ink3, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f)) {
+            if (value.isEmpty()) Text("Поиск", style = MaterialTheme.typography.bodyMedium, color = c.ink3)
+            BasicTextField(
+                value, onChange, singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = c.ink),
+                cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupLabel(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    val c = Ghost.colors
+    Row(Modifier.padding(start = 24.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = c.warn, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = c.ink3)
+    }
+}
+
+@Composable
+private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Boolean, controller: GhostlyController, onToggle: () -> Unit) {
+    val c = Ghost.colors
+    val arrow by animateFloatAsState(if (collapsed) -90f else 0f, Motion.bouncy())
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().padding(start = LocalListPad.current, end = 12.dp, top = 16.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(12.dp)).clickable(remember { MutableInteractionSource() }, null, onClick = onToggle)
+            .padding(vertical = 6.dp, horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.ExpandMore, null, tint = c.ink3, modifier = Modifier.size(20.dp).rotate(arrow))
+        Spacer(Modifier.width(6.dp))
+        Column(Modifier.weight(1f)) {
+            Text(profile.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val info = profile.info
+            val parts = buildList {
+                add("${profile.servers.size} ${Format.plural(profile.servers.size.toLong(), "сервер", "сервера", "серверов")}")
+                if (info != null && !info.unlimitedTime) add(Format.expiryPhrase(info.expire, GhostlyController.now()).lowercase())
+                if (info != null && !info.unlimitedTraffic) add("${Format.bytes(info.used)} / ${Format.bytes(info.total)}")
+            }
+            Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        }
+        Icon(Icons.Rounded.NetworkPing, "Пинг", tint = c.ink3,
+            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).pointerHoverIcon(PointerIcon.Hand)
+                .clickable { controller.haptic(); controller.pingAll(profile.id) }.padding(8.dp))
+        if (profile.url != null) {
+            if (refreshing) Spinner(c.accent, Modifier.size(18.dp).padding(1.dp))
+            else Icon(Icons.Rounded.Refresh, "Обновить", tint = c.ink3,
+                modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.refresh(profile.id) }.padding(8.dp))
+        }
+        Box {
+            Icon(Icons.Rounded.MoreHoriz, null, tint = c.ink3,
+                modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { menu = true }.padding(7.dp))
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem(text = { Text("Проверить пинг") }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) },
+                    onClick = { menu = false; controller.pingAll(profile.id) })
+                profile.url?.let { url ->
+                    DropdownMenuItem(text = { Text("Скопировать ссылку") }, leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
+                        onClick = { menu = false; controller.platform.copyToClipboard(url) })
+                }
+                DropdownMenuItem(text = { Text("Удалить", color = c.bad) }, leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = c.bad) },
+                    onClick = { menu = false; controller.deleteProfile(profile.id) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun BestRow(server: Server, ms: Long?, onClick: () -> Unit) {
+    val c = Ghost.colors
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
+            .pressScale(interaction, 0.97f, hover = 1.015f)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Brush.linearGradient(listOf(c.accent.copy(alpha = 0.22f), c.ok.copy(alpha = 0.10f))))
+            .spotlight(c.ok, 180.dp)
+            .border(1.dp, c.accent.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+            .clickable(interaction, null, onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.AutoAwesome, null, tint = c.accent, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Самый быстрый сейчас", style = MaterialTheme.typography.titleSmall)
+            val t = server.title()
+            Text(listOfNotNull(t.flag, t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        PingPill(ms, false)
+    }
+}
+
+@Composable
+private fun ServerRow(
+    server: Server, selected: Boolean, ping: Ping?, loading: Boolean, favorite: Boolean,
+    controller: GhostlyController, modifier: Modifier = Modifier, onClick: () -> Unit,
+) {
+    val c = Ghost.colors
+    val interaction = remember { MutableInteractionSource() }
+    val bg by animateColorAsState(if (selected) c.accent.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.035f), Motion.quick())
+    val border by animateColorAsState(if (selected) c.accent.copy(alpha = 0.45f) else c.line, Motion.quick())
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
+            .pressScale(interaction, 0.975f, hover = 1.015f)
+            .clip(RoundedCornerShape(20.dp))
+            .background(bg)
+            .spotlight(c.accent, 160.dp)
+            .border(1.dp, border, RoundedCornerShape(20.dp))
+            .clickable(interaction, null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp)
+            .animateContentSize(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ServerAvatar(server, 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            val t = server.title()
+            Row(verticalAlignment = Alignment.Bottom) {
+                // The name stays whole; the variant ("Стабильный", "Резерв") is what gets ellipsized.
+                Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
+                t.subtitle?.let {
+                    Text(" · $it", style = MaterialTheme.typography.bodyMedium.copy(color = c.ink2), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
+            }
+            Spacer(Modifier.height(3.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Tag(server.protocolLabel(), color = c.accent)
+                server.transportLabel()?.let { Tag(it) }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        if (!server.isAuto) PingPill(ping?.ms, loading, Modifier.clickable { controller.ping(server.id) })
+        Box {
+            Icon(
+                if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder, null,
+                tint = if (favorite) c.warn else c.ink3.copy(alpha = 0.6f),
+                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.toggleFavorite(server.id) }.padding(8.dp),
+            )
+        }
+        Box {
+            Icon(Icons.Rounded.MoreHoriz, null, tint = c.ink3,
+                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).clickable { menu = true }.padding(6.dp))
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem(text = { Text("Проверить пинг") }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) },
+                    onClick = { menu = false; controller.ping(server.id) })
+                controller.shareLink(server.id)?.let { link ->
+                    DropdownMenuItem(text = { Text(if (server.link != null) "Скопировать ссылку" else "Скопировать конфиг") },
+                        leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
+                        onClick = { menu = false; controller.platform.copyToClipboard(link) })
+                }
+                if (controller.profileOf(server.id)?.url == null) {
+                    DropdownMenuItem(text = { Text("Удалить", color = c.bad) }, leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = c.bad) },
+                        onClick = { menu = false; controller.deleteServer(server.id) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyServers(onAdd: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        GhostMark(Modifier.size(96.dp), happy = 0f)
+        Spacer(Modifier.height(12.dp))
+        Text("Здесь пока пусто", style = MaterialTheme.typography.titleLarge)
+        Text("Добавь подписку или ссылку на сервер", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(16.dp))
+        app.ghostly.ui.components.AccentButton("Добавить", onAdd, icon = Icons.Rounded.Add)
+    }
+}

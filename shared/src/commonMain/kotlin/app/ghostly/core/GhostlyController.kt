@@ -1,0 +1,580 @@
+package app.ghostly.core
+
+import app.ghostly.core.link.LinkParser
+import app.ghostly.core.link.decodeBase64Lenient
+import app.ghostly.core.link.percentDecode
+import app.ghostly.core.model.AppSettings
+import app.ghostly.core.model.Ping
+import app.ghostly.core.model.Profile
+import app.ghostly.core.model.Server
+import app.ghostly.core.store.FileStore
+import app.ghostly.core.sub.SubscriptionClient
+import app.ghostly.core.sub.SubscriptionParser
+import app.ghostly.core.vpn.PlatformInfo
+import app.ghostly.core.vpn.VpnBackend
+import app.ghostly.core.vpn.VpnState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonObject
+import kotlin.random.Random
+import kotlin.time.Clock
+
+@Serializable
+private data class UiState(
+    val selectedServerId: String? = null,
+    val favorites: Set<String> = emptySet(),
+    val pings: Map<String, Ping> = emptyMap(),
+    val onboarded: Boolean = false,
+)
+
+class GhostlyController(
+    val platform: PlatformInfo,
+    val backend: VpnBackend,
+    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
+    private val store = FileStore(platform.dataDir)
+    private val subs = SubscriptionClient(platform)
+
+    private val _profiles = MutableStateFlow(store.load(PROFILES, ListSerializer(Profile.serializer())) ?: emptyList())
+    val profiles: StateFlow<List<Profile>> = _profiles.asStateFlow()
+
+    private val _settings = MutableStateFlow(store.load(SETTINGS, AppSettings.serializer()) ?: AppSettings())
+    val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+
+    private val _ui = MutableStateFlow(store.load(STATE, UiState.serializer()) ?: UiState())
+
+    private val _selected = MutableStateFlow(_ui.value.selectedServerId)
+    val selectedServerId: StateFlow<String?> = _selected.asStateFlow()
+
+    private val _favorites = MutableStateFlow(_ui.value.favorites)
+    val favorites: StateFlow<Set<String>> = _favorites.asStateFlow()
+
+    private val _pings = MutableStateFlow(_ui.value.pings)
+    val pings: StateFlow<Map<String, Ping>> = _pings.asStateFlow()
+
+    private val _pinging = MutableStateFlow<Set<String>>(emptySet())
+    val pinging: StateFlow<Set<String>> = _pinging.asStateFlow()
+
+    private val _refreshing = MutableStateFlow<Set<String>>(emptySet())
+    val refreshing: StateFlow<Set<String>> = _refreshing.asStateFlow()
+
+    private val _onboarded = MutableStateFlow(_ui.value.onboarded || _profiles.value.isNotEmpty())
+    val onboarded: StateFlow<Boolean> = _onboarded.asStateFlow()
+
+    private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    /** One-shot messages for toasts. */
+    val events: SharedFlow<String> = _events
+
+    val state: StateFlow<VpnState> get() = backend.state
+
+    private var failoverAttempts = 0
+    private var userWantsConnection = false
+
+    init {
+        // Local proxy credentials: ghostly_xxxxxx + a random password, generated once.
+        if (_settings.value.proxyUser.isBlank() || _settings.value.proxyPass.isBlank()) {
+            updateSettings { it.copy(proxyUser = it.proxyUser.ifBlank { randomUser() }, proxyPass = it.proxyPass.ifBlank { randomPassword() }) }
+        }
+        scope.launch {
+            backend.state.collect { s ->
+                when (s) {
+                    is VpnState.Connected -> {
+                        failoverAttempts = 0
+                        startGuard()
+                    }
+                    is VpnState.Failed -> {
+                        stopGuard()
+                        if (userWantsConnection) onConnectionFailed(s.message)
+                    }
+                    else -> stopGuard()
+                }
+            }
+        }
+        if (_settings.value.autoUpdateSubs) scope.launch(Dispatchers.IO) { refreshStale() }
+    }
+
+    // ------------------------------------------------------------------ lookups
+
+    fun allServers(): List<Server> = _profiles.value.flatMap { it.servers }
+
+    fun server(id: String?): Server? = id?.let { sid -> allServers().firstOrNull { it.id == sid } }
+
+    fun profileOf(serverId: String): Profile? = _profiles.value.firstOrNull { p -> p.servers.any { it.id == serverId } }
+
+    fun selectedServer(): Server? = server(_selected.value) ?: allServers().firstOrNull()
+
+    // ------------------------------------------------------------------ import
+
+    /**
+     * Accepts anything a user might paste or scan: a subscription URL, share links (one or many),
+     * base64 blobs, a JSON config, or deep links (ghostly://, happ://add/, incy://, v2rayng://install-sub?url=).
+     */
+    fun import(raw: String, onDone: (Boolean) -> Unit = {}) {
+        scope.launch(Dispatchers.IO) {
+            val ok = runCatching { importInternal(raw.trim()) }
+                .onFailure { _events.emit("Не получилось добавить: ${it.message ?: it::class.simpleName}") }
+                .getOrDefault(false)
+            onDone(ok)
+        }
+    }
+
+    private suspend fun importInternal(text: String): Boolean {
+        if (text.isEmpty()) {
+            _events.emit("Буфер обмена пуст")
+            return false
+        }
+        unwrapDeepLink(text)?.let { return importInternal(it) }
+
+        if (text.startsWith("http://", true) || text.startsWith("https://", true)) {
+            val url = text.lineSequence().first().trim()
+            _profiles.value.firstOrNull { it.url == url }?.let {
+                refresh(it.id)
+                return true
+            }
+            val id = newId()
+            _refreshing.update { it + id }
+            try {
+                val parsed = subs.fetch(url, id, backend.appPort)
+                val profile = Profile(
+                    id = id,
+                    name = parsed.title ?: hostOf(url),
+                    url = url,
+                    info = parsed.info,
+                    supportUrl = parsed.supportUrl,
+                    webPageUrl = parsed.webPageUrl,
+                    updateIntervalHours = parsed.updateIntervalHours ?: 12,
+                    updatedAt = now(),
+                    servers = parsed.servers,
+                )
+                _profiles.update { it + profile }
+                saveProfiles()
+                if (server(_selected.value) == null) select(profile.servers.first().id)
+                markOnboarded()
+                _events.emit("Подписка «${profile.name}» добавлена · ${profile.servers.size} серверов")
+                pingAll(profile.id)
+                return true
+            } finally {
+                _refreshing.update { it - id }
+            }
+        }
+
+        if (text.startsWith("{") || text.startsWith("[")) {
+            val parsed = SubscriptionParser.parse(text, emptyMap(), newId())
+            return addManual(parsed.servers)
+        }
+
+        val lines = text.lines().map { it.trim() }.filter { LinkParser.looksLikeLink(it) }
+        if (lines.isNotEmpty()) {
+            val manual = manualProfile()
+            val base = manual?.servers?.size ?: 0
+            val servers = lines.mapIndexedNotNull { i, l -> LinkParser.parse(l, "${manual?.id ?: MANUAL}:${base + i}:${Random.nextInt(1 shl 20)}") }
+            if (servers.isEmpty()) {
+                _events.emit("Ссылка не распознана")
+                return false
+            }
+            return addManual(servers)
+        }
+
+        decodeBase64Lenient(text)?.takeIf { d -> d.lines().any { LinkParser.looksLikeLink(it) } }?.let { return importInternal(it) }
+
+        _events.emit("Не похоже на ссылку или подписку")
+        return false
+    }
+
+    private fun unwrapDeepLink(text: String): String? {
+        val lower = text.lowercase()
+        val prefixes = listOf("ghostly://import/", "ghostly://add/", "happ://add/", "incy://add/", "hiddify://import/", "v2raytun://import/")
+        prefixes.firstOrNull { lower.startsWith(it) }?.let { return percentDecode(text.substring(it.length)) }
+        if (lower.startsWith("ghostly://") || lower.startsWith("v2rayng://install-sub") || lower.startsWith("sing-box://import-remote-profile")) {
+            val query = text.substringAfter('?', "")
+            return query.split('&').firstOrNull { it.startsWith("url=") }?.let { percentDecode(it.removePrefix("url=")) }
+        }
+        return null
+    }
+
+    private suspend fun addManual(servers: List<Server>): Boolean {
+        if (servers.isEmpty()) return false
+        val existing = manualProfile()
+        if (existing == null) {
+            _profiles.update { it + Profile(id = MANUAL, name = "Мои серверы", servers = servers, updatedAt = now()) }
+        } else {
+            val known = existing.servers.mapNotNull { it.link }.toSet()
+            val fresh = servers.filter { it.link == null || it.link !in known }
+            _profiles.update { list -> list.map { if (it.id == MANUAL) it.copy(servers = it.servers + fresh) else it } }
+        }
+        saveProfiles()
+        if (server(_selected.value) == null) select(servers.first().id)
+        markOnboarded()
+        _events.emit(if (servers.size == 1) "Сервер «${servers.first().name}» добавлен" else "Добавлено серверов: ${servers.size}")
+        pingServers(servers)
+        return true
+    }
+
+    private fun manualProfile() = _profiles.value.firstOrNull { it.id == MANUAL }
+
+    // ------------------------------------------------------------------ profiles
+
+    fun refresh(profileId: String) {
+        val profile = _profiles.value.firstOrNull { it.id == profileId } ?: return
+        val url = profile.url ?: return
+        if (profileId in _refreshing.value) return
+        scope.launch(Dispatchers.IO) {
+            _refreshing.update { it + profileId }
+            try {
+                val parsed = subs.fetch(url, profileId, backend.appPort)
+                _profiles.update { list ->
+                    list.map {
+                        if (it.id != profileId) it else it.copy(
+                            name = parsed.title ?: it.name,
+                            info = parsed.info ?: it.info,
+                            supportUrl = parsed.supportUrl ?: it.supportUrl,
+                            webPageUrl = parsed.webPageUrl ?: it.webPageUrl,
+                            updateIntervalHours = parsed.updateIntervalHours ?: it.updateIntervalHours,
+                            updatedAt = now(),
+                            servers = parsed.servers,
+                        )
+                    }
+                }
+                saveProfiles()
+                // Selection is id-based (profile id + index), so it survives; fall back if the server vanished.
+                if (server(_selected.value) == null) parsed.servers.firstOrNull()?.let { select(it.id) }
+            } catch (e: Exception) {
+                _events.emit("«${profile.name}»: ${e.message ?: "ошибка обновления"}")
+            } finally {
+                _refreshing.update { it - profileId }
+            }
+        }
+    }
+
+    fun refreshAll() = _profiles.value.filter { it.url != null }.forEach { refresh(it.id) }
+
+    private fun refreshStale() {
+        val t = now()
+        _profiles.value.filter { it.url != null && t - it.updatedAt > it.updateIntervalHours.coerceAtLeast(1) * 3_600_000L }
+            .forEach { refresh(it.id) }
+    }
+
+    fun renameProfile(profileId: String, name: String) {
+        _profiles.update { list -> list.map { if (it.id == profileId) it.copy(name = name.trim().ifEmpty { it.name }) else it } }
+        saveProfiles()
+    }
+
+    fun deleteProfile(profileId: String) {
+        _profiles.update { list -> list.filterNot { it.id == profileId } }
+        saveProfiles()
+        if (server(_selected.value) == null) _selected.value = allServers().firstOrNull()?.id
+        saveUi()
+    }
+
+    fun deleteServer(serverId: String) {
+        _profiles.update { list -> list.map { p -> p.copy(servers = p.servers.filterNot { it.id == serverId }) }.filter { it.servers.isNotEmpty() || it.url != null } }
+        saveProfiles()
+        if (_selected.value == serverId) select(allServers().firstOrNull()?.id)
+    }
+
+    // ------------------------------------------------------------------ selection
+
+    fun select(serverId: String?) {
+        val previous = _selected.value
+        _selected.value = serverId
+        saveUi()
+        if (serverId != null && serverId != previous && backend.state.value is VpnState.Connected) {
+            scope.launch { reconnect() }
+        }
+    }
+
+    fun toggleFavorite(serverId: String) {
+        _favorites.update { if (serverId in it) it - serverId else it + serverId }
+        saveUi()
+    }
+
+    /** Best non-auto server by latency among those with a successful ping. */
+    fun bestServer(exclude: Set<String> = emptySet()): Server? {
+        val p = _pings.value
+        return allServers().filter { !it.isAuto && it.id !in exclude && p[it.id]?.ok == true }
+            .minByOrNull { p[it.id]!!.ms }
+    }
+
+    // ------------------------------------------------------------------ ping
+
+    fun pingAll(profileId: String? = null) {
+        val servers = if (profileId == null) allServers() else _profiles.value.firstOrNull { it.id == profileId }?.servers.orEmpty()
+        pingServers(servers)
+    }
+
+    fun ping(serverId: String) = server(serverId)?.let { pingServers(listOf(it)) }
+
+    /**
+     * Two phases: an instant TCP handshake to every server (results in ~100 ms, marked quick),
+     * then the real round-trip through the core, batched by the backend.
+     */
+    private fun pingServers(servers: List<Server>) {
+        val targets = servers.filter { !it.isAuto && it.id !in _pinging.value }
+        if (targets.isEmpty()) return
+        _pinging.update { it + targets.map { s -> s.id } }
+        scope.launch(Dispatchers.IO) {
+            val gate = Semaphore(24)
+            targets.filter { it.protocol != "hysteria" && it.host != null && it.port > 0 }.map { s ->
+                async {
+                    gate.withPermit {
+                        val ms = platform.tcpPing(s.host!!, s.port, 2500)
+                        if (ms > 0 && _pings.value[s.id]?.let { !it.quick && now() - it.at < 60_000 } != true) {
+                            _pings.update { it + (s.id to Ping(ms, now(), quick = true)) }
+                        }
+                    }
+                }
+            }.awaitAll()
+            runCatching {
+                backend.pingMany(targets, _settings.value.pingUrl) { id, ms ->
+                    _pings.update { it + (id to Ping(ms, now())) }
+                    _pinging.update { it - id }
+                }
+            }
+            _pinging.update { it - targets.map { s -> s.id }.toSet() }
+            saveUi()
+        }
+    }
+
+    // ------------------------------------------------------------------ connection
+
+    fun toggle() {
+        scope.launch {
+            when (backend.state.value) {
+                is VpnState.Connected, VpnState.Connecting -> disconnect()
+                else -> connect()
+            }
+        }
+    }
+
+    suspend fun connect() {
+        val server = selectedServer()
+        if (server == null) {
+            _events.emit("Сначала добавь подписку ♡")
+            return
+        }
+        if (backend.needsPermission() && !backend.requestPermission()) {
+            _events.emit("Без разрешения на VPN подключиться нельзя")
+            return
+        }
+        userWantsConnection = true
+        resolvePortConflicts()
+        if (_selected.value != server.id) {
+            _selected.value = server.id
+            saveUi()
+        }
+        runCatching { backend.connect(server, _settings.value) }
+            .onFailure { _events.emit(it.message ?: "Не удалось подключиться") }
+    }
+
+    suspend fun disconnect() {
+        userWantsConnection = false
+        backend.disconnect()
+    }
+
+    /** If another app holds our local proxy ports, move ours to free ones instead of failing. */
+    private suspend fun resolvePortConflicts() {
+        val s = _settings.value
+        if (!platform.isDesktop && !s.localProxy) return
+        val listen = if (s.allowLan) "0.0.0.0" else "127.0.0.1"
+        fun pick(port: Int, avoid: Int): Int {
+            if (platform.isPortFree(port, listen)) return port
+            var p = port + 10
+            while (p < 65000 && (p == avoid || !platform.isPortFree(p, listen))) p += 10
+            return p
+        }
+        val socks = pick(s.socksPort, -1)
+        val http = pick(s.httpPort, socks)
+        if (socks != s.socksPort || http != s.httpPort) {
+            updateSettings { it.copy(socksPort = socks, httpPort = http) }
+            _events.emit("Порты ${s.socksPort}/${s.httpPort} заняты другой программой — Ghostly перешёл на $socks/$http")
+        }
+    }
+
+    private suspend fun reconnect() {
+        val server = selectedServer() ?: return
+        runCatching { backend.connect(server, _settings.value) }
+            .onFailure { _events.emit(it.message ?: "Не удалось переподключиться") }
+    }
+
+    private suspend fun onConnectionFailed(message: String) {
+        val current = _selected.value
+        if (!_settings.value.autoFailover || failoverAttempts >= 3) {
+            _events.emit(message)
+            return
+        }
+        failoverAttempts++
+        val next = bestServer(exclude = setOfNotNull(current)) ?: allServers().firstOrNull { it.id != current && !it.isAuto }
+        if (next == null) {
+            _events.emit(message)
+            return
+        }
+        _events.emit("«${server(current)?.name}» не отвечает — пробую «${next.name}»")
+        _selected.value = next.id
+        saveUi()
+        runCatching { backend.connect(next, _settings.value) }
+    }
+
+    // ------------------------------------------------------------------ connection guard
+
+    private var guardJob: kotlinx.coroutines.Job? = null
+
+    private fun stopGuard() {
+        guardJob?.cancel()
+        guardJob = null
+    }
+
+    /**
+     * While connected: every ~20 s check that traffic really passes through the tunnel (not just
+     * "connected"). Two failures in a row → switch to the best working server, picking white-list
+     * servers when the mobile network is in white-list mode. On a white-list server, go back to a
+     * regular one as soon as it's reachable again — white-list traffic is the scarce pool.
+     */
+    private fun startGuard() {
+        if (guardJob?.isActive == true) return
+        guardJob = scope.launch(Dispatchers.IO) {
+            var fails = 0
+            var regularBack = 0
+            kotlinx.coroutines.delay(12_000)
+            while (true) {
+                val s = _settings.value
+                val cur = selectedServer()
+                if (s.smartGuard && cur != null) {
+                    val ms = runCatching { backend.healthCheck(s.pingUrl) }.getOrDefault(-1L)
+                    if (ms > 0) {
+                        fails = 0
+                        _pings.update { it + (cur.id to Ping(ms, now())) }
+                    } else if (!cur.isAuto) {
+                        fails++
+                    }
+                    if (fails >= 2) {
+                        fails = 0
+                        guardFailover(cur)
+                        kotlinx.coroutines.delay(15_000)
+                        continue
+                    }
+                    if (s.saveWhitelist && cur.isWhitelist && backend.directProbesBypassTunnel) {
+                        regularBack = if (regularReachable()) regularBack + 1 else 0
+                        if (regularBack >= 2) {
+                            regularBack = 0
+                            bestOf(allServers().filter { !it.isAuto && !it.isWhitelist })?.let { next ->
+                                _events.emit("Обычный интернет вернулся — перешла на «${next.name}», чтобы не тратить трафик белых списков")
+                                select(next.id)
+                            }
+                        }
+                    } else {
+                        regularBack = 0
+                    }
+                }
+                kotlinx.coroutines.delay(20_000)
+            }
+        }
+    }
+
+    /** Direct TCP to a few regular servers: does the network let normal VPN traffic through? */
+    private suspend fun regularReachable(): Boolean {
+        val regular = allServers().filter { !it.isAuto && !it.isWhitelist && it.protocol != "hysteria" && it.host != null && it.port > 0 }
+            .distinctBy { it.host to it.port }.take(3)
+        if (regular.isEmpty()) return false
+        return regular.any { platform.tcpPing(it.host!!, it.port, 2500) > 0 }
+    }
+
+    private fun bestOf(list: List<Server>): Server? {
+        val p = _pings.value
+        return list.filter { p[it.id]?.ok == true }.minByOrNull { p[it.id]!!.ms } ?: list.firstOrNull()
+    }
+
+    private suspend fun guardFailover(cur: Server) {
+        val others = allServers().filter { !it.isAuto && it.id != cur.id }
+        if (others.isEmpty()) return
+        // White-list mode: regular servers can't be reached directly, only white-listed routes work.
+        val whitelistMode = backend.directProbesBypassTunnel && !regularReachable() && others.any { it.isWhitelist }
+        val pool = if (whitelistMode) others.filter { it.isWhitelist } else others.filter { !it.isWhitelist }.ifEmpty { others }
+        val next = bestOf(pool.filter { it.name != cur.name }) ?: return
+        _events.emit(
+            if (whitelistMode) "Похоже, включились белые списки — перешла на «${next.name}»"
+            else "«${cur.name}» перестал пропускать трафик — перешла на «${next.name}»",
+        )
+        select(next.id)
+    }
+
+    // ------------------------------------------------------------------ settings
+
+    fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        val before = _settings.value
+        val after = transform(before)
+        if (after == before) return
+        _settings.value = after
+        store.save(SETTINGS, AppSettings.serializer(), after)
+        if (before.startOnBoot != after.startOnBoot) runCatching { platform.setStartOnBoot(after.startOnBoot) }
+        if (backend.state.value is VpnState.Connected && tunnelAffecting(before) != tunnelAffecting(after)) {
+            scope.launch { reconnect() }
+        }
+    }
+
+    /** Settings that only change the look don't require a reconnect. */
+    private fun tunnelAffecting(s: AppSettings) = s.copy(
+        accent = AppSettings().accent, haptics = true, reduceMotion = false, language = "",
+        autoUpdateSubs = true, autoConnect = false, startOnBoot = false, pingUrl = "",
+    )
+
+    fun haptic() {
+        if (_settings.value.haptics) platform.haptic()
+    }
+
+    fun markOnboarded() {
+        if (_onboarded.value) return
+        _onboarded.value = true
+        saveUi()
+    }
+
+    // ------------------------------------------------------------------ export
+
+    fun shareLink(serverId: String): String? = server(serverId)?.let { s -> s.link ?: s.config?.let { JsonPretty.encodeToString(JsonObject.serializer(), it) } }
+
+    fun exportConfig(serverId: String): String? = server(serverId)?.let {
+        JsonPretty.encodeToString(JsonObject.serializer(), app.ghostly.core.xray.XrayConfigBuilder.build(it, _settings.value, app.ghostly.core.xray.Ingress.Proxy(app.ghostly.core.xray.XrayConfigBuilder.localProxy(_settings.value), 0)))
+    }
+
+    // ------------------------------------------------------------------ persistence
+
+    private fun saveProfiles() = store.save(PROFILES, ListSerializer(Profile.serializer()), _profiles.value)
+
+    private fun saveUi() = store.save(
+        STATE, UiState.serializer(),
+        UiState(_selected.value, _favorites.value, _pings.value, _onboarded.value),
+    )
+
+    private fun randomUser(): String = "ghostly_" + (1..6).map { "abcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+
+    private fun randomPassword(): String = (1..20).map { "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+
+    fun regenerateProxyCredentials() = updateSettings { it.copy(proxyUser = randomUser(), proxyPass = randomPassword()) }
+
+    private fun hostOf(url: String) = url.substringAfter("://").substringBefore('/').substringBefore(':')
+
+    private fun newId() = "p" + now().toString(36) + Random.nextInt(1 shl 16).toString(36)
+
+    companion object {
+        private const val PROFILES = "profiles.json"
+        private const val SETTINGS = "settings.json"
+        private const val STATE = "state.json"
+        const val MANUAL = "manual"
+
+        fun now(): Long = Clock.System.now().toEpochMilliseconds()
+    }
+}
