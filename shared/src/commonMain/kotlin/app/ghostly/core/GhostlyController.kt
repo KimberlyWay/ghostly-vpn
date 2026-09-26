@@ -145,7 +145,15 @@ class GhostlyController(
         scope.launch(Dispatchers.IO) {
             kotlinx.coroutines.delay(4_000)
             while (true) {
-                if (_settings.value.autoCheckUpdates) runCatching { updater.check() }
+                val s = _settings.value
+                if (s.autoCheckUpdates) {
+                    val offer = runCatching { updater.check() }.getOrNull()
+                    // Hands-off updates: fetch, verify SHA-256, install (desktop relaunches and reconnects).
+                    if (offer != null && s.autoInstallUpdates && platform.canAutoInstall()) {
+                        _events.emit("Вышла Ghostly ${offer.version} — скачиваю и ставлю сама ♡")
+                        runCatching { updater.install(offer) }
+                    }
+                }
                 kotlinx.coroutines.delay(3_600_000L)
             }
         }

@@ -225,7 +225,13 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
             ToggleRow("Беречь белые списки", "Сама уходит на белые списки при блокировках и возвращается на обычные серверы, как только интернет снова нормальный", s.saveWhitelist, Icons.Rounded.Savings) { v -> set { it.copy(saveWhitelist = v) } }
             ToggleRow("Обновлять подписки", "Автоматически, как просит провайдер", s.autoUpdateSubs, Icons.Rounded.AutoMode) { v -> set { it.copy(autoUpdateSubs = v) } }
             if (controller.platform.updateAsset != null) {
-                ToggleRow("Искать обновления приложения", "Раз в несколько часов, скачивание — только по твоей кнопке", s.autoCheckUpdates, Icons.Rounded.Refresh) { v -> set { it.copy(autoCheckUpdates = v) } }
+                ToggleRow("Искать обновления приложения", "Раз в час", s.autoCheckUpdates, Icons.Rounded.Refresh) { v -> set { it.copy(autoCheckUpdates = v) } }
+                ToggleRow(
+                    "Ставить обновления автоматически",
+                    if (controller.platform.isDesktop) "Скачается, проверится по SHA-256 и установится само; VPN включится обратно"
+                    else "Скачается само и откроет окно установки",
+                    s.autoInstallUpdates, Icons.Rounded.RocketLaunch,
+                ) { v -> set { it.copy(autoInstallUpdates = v) } }
             }
             controller.platform.killSwitch?.let { ks ->
                 // Asking the firewall spawns netsh — do it off the UI thread, once per screen.

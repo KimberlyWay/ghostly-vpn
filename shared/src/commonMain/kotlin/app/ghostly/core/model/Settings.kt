@@ -96,6 +96,8 @@ data class AppSettings(
     val autoUpdateSubs: Boolean = true,
     /** Look for a new app version in the background (every 6 hours). */
     val autoCheckUpdates: Boolean = true,
+    /** Download and install a found update by itself (desktop: silent + relaunch; Android: opens the installer). */
+    val autoInstallUpdates: Boolean = true,
     val pingUrl: String = "https://www.gstatic.com/generate_204",
     val logLevel: String = "warning",
     // --- look & feel

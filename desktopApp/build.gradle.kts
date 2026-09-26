@@ -77,7 +77,7 @@ val fetchXrayCore = tasks.register<FetchXrayDesktop>("fetchXrayCore") {
 tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchXrayCore) }
 
 /** The one place to bump the desktop version (Windows/Linux use it as is, macOS as 1.x.y). */
-val ghostlyVersion = "0.1.8"
+val ghostlyVersion = "0.1.9"
 
 compose.desktop {
     application {
