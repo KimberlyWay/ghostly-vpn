@@ -1,6 +1,7 @@
 package app.ghostly.core.mihomo
 
 import app.ghostly.core.model.MIHOMO_PROFILE
+import app.ghostly.core.model.Profile
 import app.ghostly.core.model.Server
 import app.ghostly.core.model.guessPool
 import kotlinx.serialization.json.JsonArray
@@ -65,6 +66,43 @@ object MihomoProfiles {
             val members = (g["proxies"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             name to ((g.str("type") ?: "select").lowercase() to members)
         }.toMap()
+
+    /**
+     * The groups a profile will have once mihomo runs it, built from the profile alone — so the
+     * selectors can be shown and set before connecting. Members pulled from proxy-providers (`use:`)
+     * are only known to a running core and are missing here. [now] and delays are filled by the caller.
+     */
+    fun offlineGroups(profile: Profile): List<ProxyGroupInfo> {
+        val cfg = profile.mihomo
+        if (cfg == null) {
+            val names = profile.servers.filter { it.link != null && it.config == null }.map { it.name }.distinct()
+            if (names.isEmpty()) return emptyList()
+            val auto = MihomoConfigBuilder.AUTO_GROUP
+            val fallback = MihomoConfigBuilder.FALLBACK_GROUP
+            return listOf(
+                ProxyGroupInfo(MihomoConfigBuilder.MAIN_GROUP, "Selector", null, listOf(auto, fallback) + names, emptyMap(), setOf(auto, fallback)),
+                ProxyGroupInfo(auto, "URLTest", null, names, emptyMap(), emptySet()),
+                ProxyGroupInfo(fallback, "Fallback", null, names, emptyMap(), emptySet()),
+            )
+        }
+        val raw = (cfg["proxy-groups"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        val groupNames = raw.mapNotNull { it.str("name") }.toSet()
+        return raw.mapNotNull { g ->
+            val name = g.str("name") ?: return@mapNotNull null
+            if ((g["hidden"] as? JsonPrimitive)?.contentOrNull == "true") return@mapNotNull null
+            val members = (g["proxies"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            val type = when ((g.str("type") ?: "select").lowercase()) {
+                "select" -> "Selector"
+                "url-test" -> "URLTest"
+                "fallback" -> "Fallback"
+                "load-balance" -> "LoadBalance"
+                "relay" -> "Relay"
+                "smart" -> "Smart"
+                else -> g.str("type") ?: "Selector"
+            }
+            ProxyGroupInfo(name, type, null, members, emptyMap(), members.filter { it in groupNames }.toSet())
+        }
+    }
 
     /** Target of the final `MATCH,<target>` rule — the group most traffic goes through. */
     fun matchTarget(cfg: JsonObject): String? =

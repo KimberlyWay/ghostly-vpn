@@ -105,6 +105,21 @@ class MihomoTest {
     }
 
     @Test
+    fun offlineGroupsFromProfile() {
+        val parsed = SubscriptionParser.parse(yaml, emptyMap(), "p1")
+        val profile = Profile(id = "p1", name = "t", servers = parsed.servers, mihomo = parsed.mihomo)
+        val groups = MihomoProfiles.offlineGroups(profile)
+        assertEquals(listOf("Proxy", "Europe", "Auto"), groups.map { it.name })
+        assertEquals(listOf("Selector", "Selector", "URLTest"), groups.map { it.type })
+        assertEquals(setOf("Auto", "Europe"), groups[0].nestedGroups)
+
+        val link = app.ghostly.core.link.LinkParser.parse("trojan://pass@example.com:443?sni=example.com#Test", "m:0")!!
+        val linkGroups = MihomoProfiles.offlineGroups(Profile(id = "m", name = "m", servers = listOf(link)))
+        assertEquals(MihomoConfigBuilder.MAIN_GROUP, linkGroups[0].name)
+        assertTrue("Test" in linkGroups[0].members)
+    }
+
+    @Test
     fun linksGetOwnGroups() {
         val s = app.ghostly.core.link.LinkParser.parse("trojan://pass@example.com:443?sni=example.com#Test", "m:0")!!
         val settings = AppSettings(core = CoreType.MIHOMO)
