@@ -1,0 +1,40 @@
+# Copyright 2026 Nelxi
+# Distributed under the terms of the GNU General Public License v3
+# Template: CI renames this to ghostly-bin-@VERSION@.ebuild for every release.
+
+EAPI=8
+
+inherit desktop xdg
+
+DESCRIPTION="Ghostly VPN — open-source Xray client (VLESS, Hysteria2, white-list aware)"
+HOMEPAGE="https://github.com/Nelxi/ghostly-vpn"
+SRC_URI="https://github.com/Nelxi/ghostly-vpn/releases/download/v${PV}/Ghostly-Linux.tar.gz -> ${P}.tar.gz"
+S="${WORKDIR}/Ghostly"
+
+LICENSE="GPL-3"
+SLOT="0"
+KEYWORDS="~amd64"
+RESTRICT="bindist mirror strip"
+QA_PREBUILT="opt/ghostly/*"
+
+RDEPEND="
+	media-libs/alsa-lib
+	media-libs/fontconfig
+	media-libs/freetype
+	x11-libs/libX11
+	x11-libs/libXext
+	x11-libs/libXi
+	x11-libs/libXrender
+	x11-libs/libXtst
+"
+
+src_install() {
+	insinto /opt/ghostly
+	doins -r .
+	fperms +x /opt/ghostly/bin/Ghostly
+	# The bundled Xray core and runtime must stay executable.
+	find "${ED}/opt/ghostly" -type f \( -name xray -o -path '*/runtime/bin/*' -o -name 'jspawnhelper' \) -exec chmod +x {} + || die
+	dosym ../../opt/ghostly/bin/Ghostly /usr/bin/ghostly
+	newicon -s 256 lib/Ghostly.png ghostly.png
+	make_desktop_entry "/opt/ghostly/bin/Ghostly %u" "Ghostly VPN" ghostly "Network" "MimeType=x-scheme-handler/ghostly;"
+}

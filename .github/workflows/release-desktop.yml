@@ -36,7 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          # A release builds its own tag; a manual run builds the current branch and attaches to the given tag.
+          ref: ${{ github.event.release.tag_name || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -62,6 +63,15 @@ jobs:
           cp "$(find desktopApp/build/compose/binaries/main/deb -name '*.deb' | head -1)" out/Ghostly-Linux.deb
           cp "$(find desktopApp/build/compose/binaries/main/rpm -name '*.rpm' | head -1)" out/Ghostly-Linux.rpm
           tar -C desktopApp/build/compose/binaries/main/app -czf out/Ghostly-Linux.tar.gz Ghostly
+
+      - name: Arch PKGBUILD + Gentoo ebuild
+        if: matrix.kind == 'linux'
+        run: |
+          VER="${TAG#v}"
+          SUM="$(sha256sum out/Ghostly-Linux.tar.gz | cut -d' ' -f1)"
+          sed -e "s/@VERSION@/$VER/g" -e "s/@SHA256@/$SUM/g" packaging/arch/PKGBUILD.in > out/PKGBUILD
+          cp packaging/gentoo/net-vpn/ghostly-bin/ghostly-bin.ebuild.in "out/ghostly-bin-$VER.ebuild"
+          head -40 out/PKGBUILD
 
       - name: SHA-256
         run: |

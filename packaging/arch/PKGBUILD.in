@@ -1,0 +1,35 @@
+# Maintainer: Nelxi <https://github.com/Nelxi>
+# Template: CI fills @VERSION@ and @SHA256@ for every release and attaches the result as PKGBUILD.
+pkgname=ghostly-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Ghostly VPN — open-source Xray client (VLESS, Hysteria2, white-list aware)"
+arch=('x86_64')
+url="https://github.com/Nelxi/ghostly-vpn"
+license=('GPL-3.0-only')
+depends=('glibc' 'libx11' 'libxext' 'libxrender' 'libxtst' 'libxi' 'alsa-lib' 'fontconfig' 'freetype2' 'hicolor-icon-theme')
+optdepends=('libappindicator-gtk3: tray icon on GNOME/KDE'
+            'gsettings-desktop-schemas: «Системный прокси» mode on GNOME')
+provides=('ghostly')
+conflicts=('ghostly')
+options=('!strip' '!debug')
+source=("Ghostly-Linux-${pkgver}.tar.gz::https://github.com/Nelxi/ghostly-vpn/releases/download/v${pkgver}/Ghostly-Linux.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  install -d "${pkgdir}/opt/ghostly" "${pkgdir}/usr/bin"
+  cp -a "${srcdir}/Ghostly/." "${pkgdir}/opt/ghostly/"
+  ln -s /opt/ghostly/bin/Ghostly "${pkgdir}/usr/bin/ghostly"
+  install -Dm644 "${srcdir}/Ghostly/lib/Ghostly.png" "${pkgdir}/usr/share/icons/hicolor/256x256/apps/ghostly.png"
+  install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/ghostly.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Ghostly VPN
+Comment=VPN client
+Exec=/opt/ghostly/bin/Ghostly %u
+Icon=ghostly
+Categories=Network;
+MimeType=x-scheme-handler/ghostly;
+Terminal=false
+EOF
+}

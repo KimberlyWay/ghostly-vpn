@@ -8,7 +8,7 @@ try {
     & .\gradlew.bat :desktopApp:createDistributable --console=plain
     if (-not $Iscc) { $Iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source }
     if (-not $Iscc) { $Iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-    $version = (Select-String -Path desktopApp\build.gradle.kts -Pattern 'packageVersion = "(.+)"').Matches[0].Groups[1].Value
+    $version = (Select-String -Path desktopApp\build.gradle.kts -Pattern 'val ghostlyVersion = "(.+)"').Matches[0].Groups[1].Value
     & $Iscc "/DAppVersion=$version" tools\windows\ghostly.iss
 
     # Portable: same app image + a "portable" marker (switches data to .\data, no registry/autostart/updates)

@@ -1,0 +1,2 @@
+• Neater ghost on the app icon
+• macOS and Linux builds

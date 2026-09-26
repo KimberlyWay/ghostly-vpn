@@ -136,6 +136,12 @@ android {
         getByName("debug") {
             applicationIdSuffix = ".debug"
         }
+        // Google Play: same app, but no self-updater and no QUERY_ALL_PACKAGES (src/play/AndroidManifest.xml).
+        // ./gradlew :androidApp:bundlePlay -> androidApp/build/outputs/bundle/play/androidApp-play.aab
+        create("play") {
+            initWith(getByName("release"))
+            matchingFallbacks += "release"
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

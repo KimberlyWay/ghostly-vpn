@@ -151,7 +151,8 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
 
     override fun utcOffsetMinutes(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000
 
-    override val updateAsset: String = when (Build.SUPPORTED_ABIS.firstOrNull()) {
+    // The Play build updates only through Google Play (store policy).
+    override val updateAsset: String? = if (BuildConfig.BUILD_TYPE == "play") null else when (Build.SUPPORTED_ABIS.firstOrNull()) {
         "arm64-v8a" -> "Ghostly-Android.apk"
         "armeabi-v7a" -> "Ghostly-Android-armv7.apk"
         else -> "Ghostly-Android-universal.apk"

@@ -76,6 +76,9 @@ val fetchXrayCore = tasks.register<FetchXrayDesktop>("fetchXrayCore") {
 }
 tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchXrayCore) }
 
+/** The one place to bump the desktop version (Windows/Linux use it as is, macOS as 1.x.y). */
+val ghostlyVersion = "0.1.8"
+
 compose.desktop {
     application {
         mainClass = "app.ghostly.desktop.MainKt"
@@ -84,7 +87,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "Ghostly"
-            packageVersion = "0.1.8"
+            packageVersion = ghostlyVersion
             description = "Ghostly VPN"
             vendor = "Ghostly"
             copyright = "GPL-3.0"
@@ -100,6 +103,9 @@ compose.desktop {
                 iconFile = project.file("icons/ghostly.ico")
             }
             macOS {
+                // jpackage on macOS refuses a version starting with 0 ("0.1.8"): the bundle carries 1.x.y.
+                packageVersion = "1." + ghostlyVersion.substringAfter('.')
+                dmgPackageVersion = "1." + ghostlyVersion.substringAfter('.')
                 bundleID = "app.ghostly.desktop"
                 iconFile = project.file("icons/ghostly.icns")
             }
