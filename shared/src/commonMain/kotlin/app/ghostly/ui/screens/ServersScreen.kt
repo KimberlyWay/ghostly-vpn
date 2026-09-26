@@ -319,7 +319,10 @@ private fun BestRow(server: Server, ms: Long?, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("Самый быстрый сейчас", style = MaterialTheme.typography.titleSmall)
             val t = server.title()
-            Text(listOfNotNull(t.flag, t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                t.flag?.let { app.ghostly.ui.components.FlagIcon(it, 11.dp); Spacer(Modifier.width(6.dp)) }
+                Text(listOfNotNull(t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         PingPill(ms, false)
     }
@@ -415,7 +418,7 @@ private fun ServerGlyph(server: Server) {
     val flag = server.title().flag
     Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
         when {
-            flag != null -> Text(flag, fontSize = 18.sp)
+            flag != null -> app.ghostly.ui.components.FlagIcon(flag, 15.dp)
             server.isAuto -> Icon(Icons.Rounded.AutoAwesome, null, tint = c.accent, modifier = Modifier.size(19.dp))
             server.isWhitelist -> Icon(Icons.Rounded.Shield, null, tint = c.ink2, modifier = Modifier.size(18.dp))
             server.protocol == "hysteria" -> Icon(Icons.Rounded.Bolt, null, tint = c.ink2, modifier = Modifier.size(19.dp))

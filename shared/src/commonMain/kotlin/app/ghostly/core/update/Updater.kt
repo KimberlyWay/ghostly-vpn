@@ -111,6 +111,13 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
         _step.value = UpdateStep.Installing
         runCatching { platform.installUpdate(path) }
             .onFailure { _step.value = UpdateStep.Failed(it.message ?: "Не удалось запустить установку") }
+            .onSuccess {
+                // Android hands the APK to the system installer and stays alive: if the user cancels it,
+                // the banner must come back to "Обновить" instead of hanging on "Запускаю установку".
+                // (Desktop quits for the installer before this fires.)
+                kotlinx.coroutines.delay(6_000)
+                if (_step.value == UpdateStep.Installing) _step.value = UpdateStep.Idle
+            }
     }
 
     fun reset() {
