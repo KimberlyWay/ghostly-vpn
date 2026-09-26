@@ -106,7 +106,7 @@ private fun GroupHeader(g: ProxyGroupInfo, open: Boolean, testing: Boolean, pad:
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(g.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                app.ghostly.ui.components.FlagText(g.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 Text("  " + typeLabel(g.type), style = MaterialTheme.typography.labelSmall, color = c.ink3, maxLines = 1)
             }
             val now = g.now

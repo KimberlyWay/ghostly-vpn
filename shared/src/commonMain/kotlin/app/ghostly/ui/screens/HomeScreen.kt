@@ -258,7 +258,7 @@ private fun ReadyCard(m: HomeModel, controller: GhostlyController) {
                 if (server == null) Text("Сервер не выбран", style = MaterialTheme.typography.titleMedium)
                 else {
                     val t = server.title()
-                    Text(t.title + (t.subtitle?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    app.ghostly.ui.components.FlagText(t.title + (t.subtitle?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         listOfNotNull(server.protocolLabel(), server.transportLabel()).joinToString(" · "),
@@ -407,7 +407,7 @@ fun ServerCard(m: HomeModel, onClick: () -> Unit, modifier: Modifier = Modifier)
                     Text("Не выбран", style = MaterialTheme.typography.titleMedium)
                 } else {
                     val t = server.title()
-                    Text(t.title + (t.subtitle?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    app.ghostly.ui.components.FlagText(t.title + (t.subtitle?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Tag(server.protocolLabel(), color = c.accent)
