@@ -167,11 +167,30 @@ private fun FlagName(text: String, style: androidx.compose.ui.text.TextStyle, co
     }
 }
 
-/** The first flag emoji anywhere in [s], and [s] without it. */
+/** The first flag emoji (a regional-indicator pair) anywhere in [s], and [s] without it. */
 private fun splitFlag(s: String): Pair<String?, String> {
-    val flag = app.ghostly.ui.firstFlag(s) ?: return null to s
-    val rest = s.replaceFirst(flag, " ").replace(Regex(" {2,}"), " ").trim()
-    return flag to rest.ifEmpty { s }
+    var i = 0
+    while (i + 3 < s.length) {
+        val a = codePointAt(s, i)
+        if (a in 0x1F1E6..0x1F1FF) {
+            val b = codePointAt(s, i + 2)
+            if (b in 0x1F1E6..0x1F1FF) {
+                val rest = (s.substring(0, i) + s.substring(i + 4)).replace(Regex(" {2,}"), " ").trim()
+                return s.substring(i, i + 4) to rest.ifEmpty { s }
+            }
+        }
+        i += if (s[i].isHighSurrogate()) 2 else 1
+    }
+    return null to s
+}
+
+private fun codePointAt(s: String, i: Int): Int {
+    val c = s[i]
+    if (c.isHighSurrogate() && i + 1 < s.length) {
+        val d = s[i + 1]
+        if (d.isLowSurrogate()) return ((c.code - 0xD800) shl 10) + (d.code - 0xDC00) + 0x10000
+    }
+    return c.code
 }
 
 private fun delayText(ms: Int) = if (ms <= 0) "нет" else "$ms мс"

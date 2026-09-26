@@ -61,23 +61,19 @@ data class ServerTitle(val flag: String?, val title: String, val subtitle: Strin
 
 fun Server.title(): ServerTitle {
     var n = name.trim()
-    val flag = firstFlag(n)
-    // The flag is drawn separately wherever it stands: "🇩🇪 Berlin", "Berlin 🇩🇪", "VIP | 🇩🇪 Berlin".
-    if (flag != null) n = n.replaceFirst(flag, " ").replace(Regex(" {2,}"), " ").trim().trim('|', '·', '-').trim()
+    val flag = leadingFlag(n)
+    if (flag != null) n = n.removePrefix(flag).trim()
     val parts = n.split(" · ", " | ", " - ").map { it.trim() }.filter { it.isNotEmpty() }
     return if (parts.size >= 2) ServerTitle(flag, parts.first(), parts.drop(1).joinToString(" · "))
     else ServerTitle(flag, n.ifEmpty { name }, null)
 }
 
-/** The first regional-indicator pair (a flag emoji) anywhere in the string, if any. */
-fun firstFlag(s: String): String? {
-    var i = 0
-    while (i + 3 < s.length) {
-        val a = s.codePointAtCompat(i)
-        if (a in 0x1F1E6..0x1F1FF && s.codePointAtCompat(i + 2) in 0x1F1E6..0x1F1FF) return s.substring(i, i + 4)
-        i += if (s[i].isHighSurrogate()) 2 else 1
-    }
-    return null
+/** A regional-indicator pair at the start of the string (a flag emoji), if any. */
+private fun leadingFlag(s: String): String? {
+    if (s.length < 4) return null
+    val a = s.codePointAtCompat(0)
+    val b = s.codePointAtCompat(2)
+    return if (a in 0x1F1E6..0x1F1FF && b in 0x1F1E6..0x1F1FF) s.substring(0, 4) else null
 }
 
 private fun String.codePointAtCompat(i: Int): Int {

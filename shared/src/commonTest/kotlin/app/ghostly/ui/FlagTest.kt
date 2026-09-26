@@ -14,14 +14,4 @@ class FlagTest {
         assertNull(flagCode("\uD83D\uDC7B"))
         assertNull(flagCode(null))
     }
-
-    @Test
-    fun flagFoundAnywhereInName() {
-        val de = "🇩🇪"
-        fun t(name: String) = app.ghostly.core.model.Server(id = "x", name = name, protocol = "vless").title()
-        assertEquals(de to "Berlin", t("$de Berlin").let { it.flag to it.title })
-        assertEquals(de to "Berlin", t("Berlin $de").let { it.flag to it.title })
-        assertEquals(de, t("VIP | $de Berlin").flag)
-        assertNull(t("Berlin").flag)
-    }
 }
