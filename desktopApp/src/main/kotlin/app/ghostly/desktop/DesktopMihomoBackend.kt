@@ -121,6 +121,7 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
             Thread {
                 p.inputStream.bufferedReader().forEachLine { line ->
                     synchronized(log) { log.addLast(line); while (log.size > 300) log.removeFirst() }
+                    coreLog.add(line)
                 }
             }.apply { isDaemon = true }.start()
 
@@ -276,6 +277,8 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
     }
 
     val recentLog: List<String> get() = synchronized(log) { log.toList() }
+
+    override val coreLog = app.ghostly.core.vpn.CoreLog()
 
     private fun measure(port: Int, url: String): Long {
         val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port))

@@ -106,6 +106,9 @@ class DualCoreBackend(
 
     override val appPort: Int? get() = active.value.appPort
 
+    /** The log of the core that runs (or last ran) the tunnel. */
+    override val coreLog: app.ghostly.core.vpn.CoreLog get() = active.value.coreLog
+
     override fun coreVersion(): String = "${xray.coreVersion()} · ${mihomo.coreVersion()}"
 
     override suspend fun switchInPlace(server: Server): Boolean {

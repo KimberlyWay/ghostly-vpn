@@ -105,7 +105,13 @@ object AndroidMihomo : MihomoCore {
     @Volatile private var pendingPicks: List<MihomoPick> = emptyList()
     @Volatile private var running: Session? = null
     private var trafficJob: Job? = null
+    private var logJob: Job? = null
     @Volatile private var version: String? = null
+    /** mihomo log level of the current tunnel ("none" = off). */
+    @Volatile private var logLevel: String = "warning"
+
+    /** The core runs in another process: its log comes over the controller's /logs stream. */
+    override val coreLog = app.ghostly.core.vpn.CoreLog()
 
     /** mihomo's home in the `:mihomo` processes (the bridge uses files/clash). */
     fun homeDir(context: Context) = File(context.filesDir, "clash")
@@ -150,6 +156,7 @@ object AndroidMihomo : MihomoCore {
     override suspend fun connect(server: Server, profile: Profile?, settings: AppSettings): Unit = withContext(Dispatchers.IO) {
         stopLocal()
         mutableState.value = VpnState.Connecting
+        logLevel = settings.logLevel
         try {
             val controller = freePort()
             val secret = randomSecret()
@@ -210,7 +217,9 @@ object AndroidMihomo : MihomoCore {
             }
             MihomoVpnService.STATE_FAILED -> {
                 stopLocal()
-                mutableState.value = VpnState.Failed(intent.getStringExtra(MihomoVpnService.EXTRA_MESSAGE) ?: "mihomo не запустился")
+                val message = intent.getStringExtra(MihomoVpnService.EXTRA_MESSAGE) ?: "mihomo не запустился"
+                coreLog.add("error: $message")
+                mutableState.value = VpnState.Failed(message)
             }
             MihomoVpnService.STATE_IDLE -> {
                 stopLocal()
@@ -229,6 +238,22 @@ object AndroidMihomo : MihomoCore {
         mutableTraffic.value = Traffic()
         mutableState.value = VpnState.Connected(session.since.takeIf { it > 0 } ?: System.currentTimeMillis(), session.serverId)
         startWatch(client)
+        startLog(client)
+    }
+
+    private fun startLog(client: MihomoApi) {
+        logJob?.cancel()
+        val level = when (logLevel) {
+            "none" -> return
+            "debug", "info", "warning", "error" -> logLevel
+            else -> "warning"
+        }
+        logJob = scope.launch {
+            while (isActive) {
+                runCatching { client.logs(level).collect { coreLog.add(it) } }
+                delay(2000)
+            }
+        }
     }
 
     /**
@@ -254,6 +279,7 @@ object AndroidMihomo : MihomoCore {
                 if (!isActive) break
                 if (client.ready()) misses = 0 else misses++
                 if (misses >= 2) {
+                    coreLog.add("error: процесс ядра mihomo закрыт системой")
                     stopLocal()
                     mutableState.value = VpnState.Failed("mihomo остановился (система закрыла процесс ядра)")
                     break
@@ -266,6 +292,8 @@ object AndroidMihomo : MihomoCore {
     private fun stopLocal() {
         trafficJob?.cancel()
         trafficJob = null
+        logJob?.cancel()
+        logJob = null
         api?.close()
         api = null
         appPort = null

@@ -160,6 +160,20 @@ class MihomoApi(val port: Int, private val secret: String) {
         }
     }
 
+    /** Log lines as the core emits them ("level: message"), filtered by [level] (debug/info/warning/error). */
+    fun logs(level: String): Flow<String> = flow {
+        client.prepareGet { endpoint("logs", query = mapOf("level" to level)) }.execute { r ->
+            val ch = r.bodyAsChannel()
+            while (true) {
+                val line = ch.readUTF8Line() ?: break
+                if (line.isBlank()) continue
+                val o = runCatching { JsonX.parseToJsonElement(line).jsonObject }.getOrNull() ?: continue
+                val type = o["type"]?.jsonPrimitive?.contentOrNull ?: "info"
+                emit("$type: ${o["payload"]?.jsonPrimitive?.contentOrNull.orEmpty()}")
+            }
+        }
+    }
+
     fun close() = client.close()
 
     private fun JsonArray?.orEmpty(): List<kotlinx.serialization.json.JsonElement> = this ?: emptyList()
