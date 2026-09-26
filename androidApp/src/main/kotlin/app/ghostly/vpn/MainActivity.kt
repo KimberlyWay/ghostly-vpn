@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent { GhostlyApp(app.controller) }
+        app.platform.hapticView = java.lang.ref.WeakReference(window.decorView)
         handleIntent(intent)
     }
 

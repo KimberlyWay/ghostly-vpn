@@ -178,11 +178,17 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
             Segmented(listOf(CoreType.XRAY to "Xray", CoreType.MIHOMO to "mihomo"), s.core, { v -> set { it.copy(core = v) } })
             Text(
                 when (s.core) {
-                    CoreType.XRAY -> "Xray для ссылок и JSON-подписок. Clash/mihomo-профили всё равно запускаются на mihomo."
-                    CoreType.MIHOMO -> "mihomo (Prizrak-Core): подписки приходят в формате Clash с группами-селекторами, ссылки получают группы «Авто» и «Резерв». JSON-конфиги Xray остаются на Xray."
+                    CoreType.XRAY -> "Рекомендуется. Одна кнопка «Авто», белые списки и умное переключение серверов. Подписки в формате Clash на этом ядре скрыты."
+                    CoreType.MIHOMO -> "Для подписок в формате Clash с группами-селекторами (выбор сервера внутри группы). Подписки только в формате Xray на этом ядре скрыты."
                 },
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
             )
+            SettingRow("Способ пинга", s.pingMethod.title, Icons.Rounded.Speed)
+            Segmented(
+                listOf(PingMethod.PROXY_GET to "GET", PingMethod.PROXY_HEAD to "HEAD", PingMethod.TCP to "TCP", PingMethod.ICMP to "ICMP"),
+                s.pingMethod, { v -> set { it.copy(pingMethod = v) } },
+            )
+            Spacer(Modifier.height(8.dp))
             SettingRow("Маршрутизация", when (s.routingMode) {
                 RoutingMode.SMART -> "Умная: российские сайты напрямую"
                 RoutingMode.GLOBAL -> "Весь трафик через VPN"

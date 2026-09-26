@@ -72,9 +72,12 @@ data class AppSettings(
     val customDns: String = "",
     val ipv6: Boolean = false,
     // --- tunnel
-    val core: CoreType = CoreType.MIHOMO,
-    /** Set once the one-time switch to mihomo as the default core happened (a later manual choice sticks). */
+    /** Xray by default: one "Авто" button is what most people want; mihomo (selectors) is opt-in. */
+    val core: CoreType = CoreType.XRAY,
+    /** Legacy flag of 0.2.1 (it moved everyone to mihomo once). */
     val coreDefaultApplied: Boolean = false,
+    /** Set once 0.2.2 moved everyone back to Xray; a manual choice made after that sticks. */
+    val coreXrayRestored: Boolean = false,
     val mtu: Int = 1500,
     val mux: Boolean = false,
     val fragment: Boolean = false,
