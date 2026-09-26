@@ -150,6 +150,7 @@ fun HomeScreen(controller: GhostlyController, onPickServer: () -> Unit, contentP
             }
             m.profile?.supportUrl?.let { url -> IconBubble(Icons.Rounded.SupportAgent, onClick = { controller.platform.openUrl(url) }) }
         }
+        app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(18.dp))
         HomeHero(m, controller, 236.dp)
         Spacer(Modifier.height(22.dp))

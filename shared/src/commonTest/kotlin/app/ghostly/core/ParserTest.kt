@@ -121,4 +121,13 @@ class ParserTest {
         assertEquals(1, (ping["outbounds"] as JsonArray).size)
         assertTrue("inbounds" !in ping)
     }
+
+    @Test
+    fun versionCompare() {
+        val cmp = app.ghostly.core.update.Updater.Companion::compareVersions
+        assertTrue(cmp("0.1.10", "0.1.9") > 0)
+        assertTrue(cmp("0.2.0", "0.1.99") > 0)
+        assertEquals(0, cmp("0.1.2", "0.1.2-dev"))
+        assertTrue(cmp("0.1.1", "0.1.2") < 0)
+    }
 }

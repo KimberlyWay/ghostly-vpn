@@ -176,6 +176,7 @@ private fun Sidebar(controller: GhostlyController, tab: Tab, onTab: (Tab) -> Uni
             Spacer(Modifier.height(10.dp))
         }
 
+        app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(bottom = 10.dp), compact = true)
         StatusChip(state) { controller.haptic(); controller.toggle() }
         Spacer(Modifier.height(10.dp))
         Text("v${controller.platform.appVersion}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))

@@ -91,6 +91,19 @@ interface PlatformInfo {
     fun share(text: String) = copyToClipboard(text)
     fun haptic() {}
 
+    /** Release file name for this platform/ABI ("Ghostly-Android.apk", "Ghostly-Windows.exe"); null = no self-update. */
+    val updateAsset: String? get() = null
+
+    /**
+     * Downloads the first reachable of [urls], hashing while it streams; returns the local path only
+     * if SHA-256 equals [sha256], otherwise deletes it and throws.
+     */
+    suspend fun downloadVerified(urls: List<String>, sha256: String, size: Long, onProgress: (Float) -> Unit): String =
+        throw UnsupportedOperationException("updates are not supported here")
+
+    /** Hands a verified update to the OS installer (Android package installer / Windows setup). */
+    fun installUpdate(path: String) {}
+
     /** This device's address in the local network (Wi-Fi/Ethernet), for sharing the proxy. */
     fun lanAddress(): String? = null
 

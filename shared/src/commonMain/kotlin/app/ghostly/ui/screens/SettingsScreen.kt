@@ -561,8 +561,12 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
             Text("Ghostly VPN", style = MaterialTheme.typography.headlineMedium)
             Text("версия ${controller.platform.appVersion}", style = MaterialTheme.typography.bodySmall)
         }
+        app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(bottom = 12.dp))
         Group {
             SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
+            if (controller.platform.updateAsset != null) {
+                SettingRow("Проверить обновления", "Скачиваются с нашего сервера и проверяются по SHA-256", Icons.Rounded.Refresh, onClick = { controller.checkUpdates(manual = true) }) { Chevron() }
+            }
             SettingRow("Исходный код", "Открытый проект на GitHub · GPL-3.0", Icons.Rounded.Code, onClick = { controller.platform.openUrl(GITHUB_URL) }) { Chevron() }
             SettingRow("Сайт", "ghostlinknex.online", Icons.Rounded.Language, onClick = { controller.platform.openUrl("https://ghostlinknex.online") }) { Chevron() }
         }

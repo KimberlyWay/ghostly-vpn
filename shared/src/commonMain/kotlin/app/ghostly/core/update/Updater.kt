@@ -1,0 +1,114 @@
+package app.ghostly.core.update
+
+import app.ghostly.core.JsonX
+import app.ghostly.core.vpn.PlatformInfo
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class ReleaseFile(val size: Long = 0, val sha256: String)
+
+/** `/dl/latest.json`, published next to every release. */
+@Serializable
+data class ReleaseManifest(val version: String, val files: Map<String, ReleaseFile> = emptyMap(), val github: String? = null)
+
+data class UpdateOffer(val version: String, val file: String, val sha256: String, val size: Long)
+
+sealed interface UpdateStep {
+    data object Idle : UpdateStep
+    data class Downloading(val progress: Float) : UpdateStep
+    data object Verifying : UpdateStep
+    data object Installing : UpdateStep
+    data class Failed(val message: String) : UpdateStep
+}
+
+/**
+ * Checks our server (both domains, then GitHub) for a newer build of this platform's file,
+ * downloads it and only hands it to the installer after the SHA-256 matches the manifest.
+ */
+class Updater(private val platform: PlatformInfo, private val isDismissed: (String) -> Boolean) {
+
+    private val http = HttpClient {
+        install(HttpTimeout) { requestTimeoutMillis = 15_000; connectTimeoutMillis = 8_000 }
+        expectSuccess = false
+    }
+
+    private val _offer = MutableStateFlow<UpdateOffer?>(null)
+    val offer: StateFlow<UpdateOffer?> = _offer.asStateFlow()
+
+    private val _step = MutableStateFlow<UpdateStep>(UpdateStep.Idle)
+    val step: StateFlow<UpdateStep> = _step.asStateFlow()
+
+    /** @return the offer if a newer version exists (ignores the user's "✕" unless [force]). */
+    suspend fun check(force: Boolean = false): UpdateOffer? {
+        val asset = platform.updateAsset ?: return null
+        val manifest = MANIFESTS.firstNotNullOfOrNull { url ->
+            runCatching {
+                val r = http.get(url) { header("User-Agent", "GhostlyVPN/${platform.appVersion} (${platform.os})") }
+                if (r.status.isSuccess()) JsonX.decodeFromString(ReleaseManifest.serializer(), r.bodyAsText()) else null
+            }.getOrNull()
+        } ?: return null
+        val file = manifest.files[asset] ?: return null
+        val newer = compareVersions(manifest.version, platform.appVersion) > 0
+        val offer = if (newer && (force || !isDismissed(manifest.version))) UpdateOffer(manifest.version, asset, file.sha256, file.size) else null
+        _offer.value = offer
+        return offer
+    }
+
+    fun hide() {
+        _offer.value = null
+    }
+
+    suspend fun install(offer: UpdateOffer) {
+        if (_step.value is UpdateStep.Downloading || _step.value is UpdateStep.Verifying) return
+        _step.value = UpdateStep.Downloading(0f)
+        val urls = MIRRORS.map { it + offer.file }
+        val path = try {
+            platform.downloadVerified(urls, offer.sha256, offer.size) { p ->
+                _step.value = if (p >= 1f) UpdateStep.Verifying else UpdateStep.Downloading(p)
+            }
+        } catch (e: Exception) {
+            _step.value = UpdateStep.Failed(e.message ?: "Не удалось скачать обновление")
+            return
+        }
+        _step.value = UpdateStep.Installing
+        runCatching { platform.installUpdate(path) }
+            .onFailure { _step.value = UpdateStep.Failed(it.message ?: "Не удалось запустить установку") }
+    }
+
+    fun reset() {
+        _step.value = UpdateStep.Idle
+    }
+
+    companion object {
+        private val MANIFESTS = listOf(
+            "https://ghostlinknex.online/dl/latest.json",
+            "https://srv.ghostlinknex.online/dl/latest.json",
+        )
+        private val MIRRORS = listOf(
+            "https://ghostlinknex.online/dl/",
+            "https://srv.ghostlinknex.online/dl/",
+            "https://github.com/Nelxi/ghostly-vpn/releases/latest/download/",
+        )
+
+        /** "0.1.10" > "0.1.9"; suffixes like "-dev" are ignored. */
+        fun compareVersions(a: String, b: String): Int {
+            fun parts(v: String) = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+            val x = parts(a)
+            val y = parts(b)
+            for (i in 0 until maxOf(x.size, y.size)) {
+                val d = (x.getOrElse(i) { 0 }).compareTo(y.getOrElse(i) { 0 })
+                if (d != 0) return d
+            }
+            return 0
+        }
+    }
+}

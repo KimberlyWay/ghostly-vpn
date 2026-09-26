@@ -40,6 +40,8 @@ private data class UiState(
     val favorites: Set<String> = emptySet(),
     val pings: Map<String, Ping> = emptyMap(),
     val onboarded: Boolean = false,
+    /** Update version the user closed with ✕ — not offered again until a newer one appears. */
+    val dismissedUpdate: String? = null,
 )
 
 class GhostlyController(
@@ -73,6 +75,29 @@ class GhostlyController(
     private val _refreshing = MutableStateFlow<Set<String>>(emptySet())
     val refreshing: StateFlow<Set<String>> = _refreshing.asStateFlow()
 
+    private var dismissedUpdate: String? = _ui.value.dismissedUpdate
+
+    /** App self-update (our server first, GitHub mirror), verified by SHA-256. */
+    val updater = app.ghostly.core.update.Updater(platform) { v -> v == dismissedUpdate }
+
+    fun dismissUpdate() {
+        dismissedUpdate = updater.offer.value?.version
+        updater.hide()
+        saveUi()
+    }
+
+    fun installUpdate() {
+        val offer = updater.offer.value ?: return
+        scope.launch(Dispatchers.IO) { updater.install(offer) }
+    }
+
+    fun checkUpdates(manual: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            val offer = runCatching { updater.check(force = manual) }.getOrNull()
+            if (manual) _events.emit(offer?.let { "Вышла версия ${it.version} — можно обновиться" } ?: "У тебя последняя версия ♡")
+        }
+    }
+
     private val _onboarded = MutableStateFlow(_ui.value.onboarded || _profiles.value.isNotEmpty())
     val onboarded: StateFlow<Boolean> = _onboarded.asStateFlow()
 
@@ -105,6 +130,13 @@ class GhostlyController(
                     }
                     else -> stopGuard()
                 }
+            }
+        }
+        scope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(4_000)
+            while (true) {
+                runCatching { updater.check() }
+                kotlinx.coroutines.delay(6 * 3_600_000L)
             }
         }
         // Subscriptions refresh themselves: at start, then every 15 min check whether the provider's
@@ -565,7 +597,7 @@ class GhostlyController(
 
     private fun saveUi() = store.save(
         STATE, UiState.serializer(),
-        UiState(_selected.value, _favorites.value, _pings.value, _onboarded.value),
+        UiState(_selected.value, _favorites.value, _pings.value, _onboarded.value, dismissedUpdate),
     )
 
     private fun randomUser(): String = "ghostly_" + (1..6).map { "abcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")

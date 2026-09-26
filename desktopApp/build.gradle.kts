@@ -82,7 +82,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "Ghostly"
-            packageVersion = "0.1.1"
+            packageVersion = "0.1.2"
             description = "Ghostly VPN"
             vendor = "Ghostly"
             copyright = "GPL-3.0"

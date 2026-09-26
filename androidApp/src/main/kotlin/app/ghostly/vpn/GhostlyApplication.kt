@@ -127,6 +127,30 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
         }.getOrDefault(-1L)
     }
 
+    override val updateAsset: String = when (Build.SUPPORTED_ABIS.firstOrNull()) {
+        "arm64-v8a" -> "Ghostly-Android.apk"
+        "armeabi-v7a" -> "Ghostly-Android-armv7.apk"
+        else -> "Ghostly-Android-universal.apk"
+    }
+
+    override suspend fun downloadVerified(urls: List<String>, sha256: String, size: Long, onProgress: (Float) -> Unit): String =
+        downloadVerifiedTo(java.io.File(context.cacheDir, "updates/$updateAsset"), urls, sha256, size, onProgress)
+
+    override fun installUpdate(path: String) {
+        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+            context.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            throw IllegalStateException("Разрешите Ghostly устанавливать приложения и нажмите «Обновить» ещё раз")
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.updates", java.io.File(path))
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
     override suspend fun installedApps(): List<AppEntry> = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         pm.getInstalledApplications(PackageManager.GET_META_DATA)

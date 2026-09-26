@@ -20,6 +20,12 @@ val hostOs: HostOs = System.getProperty("os.name").lowercase().let {
 }
 
 class DesktopPlatform : PlatformInfo {
+    /** Folder of Ghostly.exe; a file named `portable` next to it switches on portable mode. */
+    private val exeDir: File? = ProcessHandle.current().info().command().orElse(null)?.let { File(it).parentFile }
+
+    /** Portable build: data lives next to the exe, nothing is written to the system (registry, autostart, URL scheme). */
+    val portable: Boolean = exeDir?.let { File(it, "portable").isFile } == true
+
     override val os: String = when (hostOs) {
         HostOs.WINDOWS -> "Windows"
         HostOs.MACOS -> "macOS"
@@ -27,10 +33,28 @@ class DesktopPlatform : PlatformInfo {
     }
     override val osVersion: String = System.getProperty("os.version")
     override val deviceModel: String = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrDefault("PC")
-    override val appVersion: String = System.getProperty("jpackage.app-version") ?: "0.1.1-dev"
+    override val appVersion: String = System.getProperty("jpackage.app-version") ?: "0.1.2-dev"
     override val isDesktop = true
 
-    override val dataDir: String = when (hostOs) {
+    /** Installed Windows build updates itself; dev runs (java.exe) and other OSes don't. */
+    override val updateAsset: String? = run {
+        val exe = ProcessHandle.current().info().command().orElse("")
+        if (hostOs == HostOs.WINDOWS && exe.endsWith("Ghostly.exe", ignoreCase = true) && !portable) "Ghostly-Windows.exe" else null
+    }
+
+    /** Set by main(): disconnect (restores the system proxy) and exit so the installer can replace files. */
+    var quitForUpdate: (() -> Unit)? = null
+
+    override suspend fun downloadVerified(urls: List<String>, sha256: String, size: Long, onProgress: (Float) -> Unit): String =
+        downloadVerifiedTo(File(System.getProperty("java.io.tmpdir"), "ghostly-update/Ghostly-Windows.exe"), urls, sha256, size, onProgress)
+
+    override fun installUpdate(path: String) {
+        // Silent Inno Setup over the current install; its [Run] entry starts Ghostly again when done.
+        ProcessBuilder(path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS").start()
+        quitForUpdate?.invoke()
+    }
+
+    override val dataDir: String = if (portable) File(exeDir, "data").apply { mkdirs() }.absolutePath else when (hostOs) {
         HostOs.WINDOWS -> File(System.getenv("APPDATA") ?: System.getProperty("user.home"), "Ghostly")
         HostOs.MACOS -> File(System.getProperty("user.home"), "Library/Application Support/Ghostly")
         HostOs.LINUX -> File(System.getenv("XDG_DATA_HOME") ?: (System.getProperty("user.home") + "/.local/share"), "ghostly")
@@ -101,6 +125,7 @@ class DesktopPlatform : PlatformInfo {
     /** Autostart entry: HKCU Run key / LaunchAgent / XDG autostart, launching minimized to tray. */
     override fun setStartOnBoot(enabled: Boolean) {
         val exe = ProcessHandle.current().info().command().orElse(null) ?: return
+        if (portable && enabled) return
         // Only meaningful for the installed app, not for `gradlew run`.
         if (exe.endsWith("java.exe") || exe.endsWith("/java")) return
         runCatching {

@@ -61,6 +61,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\Ghostly.exe"; Description: "{cm:LaunchProgram,Ghostly VPN}"; Flags: nowait postinstall skipifsilent
+; self-update runs the installer silently — bring Ghostly back afterwards
+Filename: "{app}\Ghostly.exe"; Flags: nowait skipifnotsilent
 
 [UninstallRun]
 ; Close Ghostly gracefully first: it disconnects and restores the system proxy on exit.

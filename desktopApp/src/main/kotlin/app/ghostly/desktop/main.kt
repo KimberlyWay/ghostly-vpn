@@ -27,7 +27,7 @@ fun main(args: Array<String>) {
         raise.intValue++
     }
     if (!first) return
-    SingleInstance.registerUrlScheme()
+    if (!platform.portable) SingleInstance.registerUrlScheme()
     val backend = DesktopXrayBackend(platform)
     val c = GhostlyController(platform, backend)
     controller = c
@@ -53,6 +53,7 @@ fun main(args: Array<String>) {
             runBlocking { c.disconnect() }
             exitApplication()
         }
+        platform.quitForUpdate = { javax.swing.SwingUtilities.invokeLater { quit() } }
 
         if (icon != null) {
             Tray(
