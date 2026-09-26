@@ -1,4 +1,4 @@
-import java.net.URI
+﻿import java.net.URI
 import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
@@ -159,7 +159,7 @@ val fetchMihomoCore = tasks.register<FetchMihomoDesktop>("fetchMihomoCore") {
 tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(fetchXrayCore, fetchMihomoCore) }
 
 /** The one place to bump the desktop version (Windows/Linux use it as is, macOS as 1.x.y). */
-val ghostlyVersion = "0.2.3"
+val ghostlyVersion = "0.2.4"
 
 compose.desktop {
     application {
