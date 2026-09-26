@@ -415,7 +415,9 @@ class GhostlyController(
         }
         userWantsConnection = true
         resolvePortConflicts()
-        val target = if (_settings.value.saveWhitelist) chooseForNetwork(server) else server
+        // «Авто» from the subscription is an Xray balancer that already includes white-list servers:
+        // switching away from it would just fight the balancer.
+        val target = if (_settings.value.saveWhitelist && !server.isAuto) chooseForNetwork(server) else server
         if (_selected.value != target.id) {
             _selected.value = target.id
             saveUi()
@@ -513,7 +515,7 @@ class GhostlyController(
                     val net = platform.networkType()
                     val netChanged = lastNet != null && net != lastNet
                     lastNet = net
-                    if (s.saveWhitelist && backend.directProbesBypassTunnel && hasWhitelistServers()) {
+                    if (!cur.isAuto && s.saveWhitelist && backend.directProbesBypassTunnel && hasWhitelistServers()) {
                         when {
                             // Switched Wi-Fi -> mobile while on a regular server: re-check right away.
                             netChanged && net == NetType.CELLULAR && !cur.isWhitelist && !regularStable() -> {

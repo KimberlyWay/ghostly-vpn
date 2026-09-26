@@ -8,6 +8,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,11 +52,16 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
     /** @return the offer if a newer version exists (ignores the user's "✕" unless [force]). */
     suspend fun check(force: Boolean = false): UpdateOffer? {
         val asset = platform.updateAsset ?: return null
-        val manifest = MANIFESTS.firstNotNullOfOrNull { url ->
-            runCatching {
-                val r = http.get(url) { header("User-Agent", "GhostlyVPN/${platform.appVersion} (${platform.os})") }
-                if (r.status.isSuccess()) JsonX.decodeFromString(ReleaseManifest.serializer(), r.bodyAsText()) else null
-            }.getOrNull()
+        // Ask every mirror at once and trust the newest answer: a CDN edge can hold a stale manifest.
+        val manifest = kotlinx.coroutines.coroutineScope {
+            MANIFESTS.map { url ->
+                async {
+                    runCatching {
+                        val r = http.get(url) { header("User-Agent", "GhostlyVPN/${platform.appVersion} (${platform.os})") }
+                        if (r.status.isSuccess()) JsonX.decodeFromString(ReleaseManifest.serializer(), r.bodyAsText()) else null
+                    }.getOrNull()
+                }
+            }.awaitAll().filterNotNull().maxWithOrNull { a, b -> compareVersions(a.version, b.version) }
         } ?: return null
         val file = manifest.files[asset] ?: return null
         val newer = compareVersions(manifest.version, platform.appVersion) > 0
@@ -70,7 +77,9 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
     suspend fun install(offer: UpdateOffer) {
         if (_step.value is UpdateStep.Downloading || _step.value is UpdateStep.Verifying) return
         _step.value = UpdateStep.Downloading(0f)
-        val urls = MIRRORS.map { it + offer.file }
+        // Versioned folders first: a URL that never changes can't be served stale by a cache.
+        val urls = SERVERS.map { it + offer.version + "/" + offer.file } + MIRRORS.map { it + offer.file } +
+            "https://github.com/Nelxi/ghostly-vpn/releases/download/v${offer.version}/${offer.file}"
         val path = try {
             platform.downloadVerified(urls, offer.sha256, offer.size) { p ->
                 _step.value = if (p >= 1f) UpdateStep.Verifying else UpdateStep.Downloading(p)
@@ -92,6 +101,10 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
         private val MANIFESTS = listOf(
             "https://ghostlinknex.online/dl/latest.json",
             "https://srv.ghostlinknex.online/dl/latest.json",
+        )
+        private val SERVERS = listOf(
+            "https://srv.ghostlinknex.online/dl/",
+            "https://ghostlinknex.online/dl/",
         )
         private val MIRRORS = listOf(
             "https://ghostlinknex.online/dl/",
