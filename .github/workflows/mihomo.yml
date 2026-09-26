@@ -22,8 +22,9 @@ jobs:
           cache: false
       - uses: gradle/actions/setup-gradle@v4
       # The mihomo core (Go + NDK) takes a while to build: keep it until the pinned commit changes.
-      - name: Cache mihomo core
-        uses: actions/cache@v4
+      - name: Restore mihomo core
+        id: core-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             androidApp/libs/mihomo-core.aar
@@ -31,7 +32,18 @@ jobs:
             androidApp/libs/.mihomo-ref
           key: mihomo-core-${{ hashFiles('gradle/libs.versions.toml', 'tools/android/build-mihomo-core.sh') }}
       - name: Build mihomo core
+        if: steps.core-cache.outputs.cache-hit != 'true'
         run: bash tools/android/build-mihomo-core.sh
+      # Saved right away, so a later failing step doesn't throw the 8-minute core build away.
+      - name: Save mihomo core
+        if: steps.core-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            androidApp/libs/mihomo-core.aar
+            androidApp/libs/mihomo-common.aar
+            androidApp/libs/.mihomo-ref
+          key: mihomo-core-${{ hashFiles('gradle/libs.versions.toml', 'tools/android/build-mihomo-core.sh') }}
       - name: Unit tests
         run: ./gradlew :shared:jvmTest --console=plain
       - name: Android release build
