@@ -266,7 +266,7 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
             val gate = Semaphore(12)
             kotlinx.coroutines.coroutineScope {
                 servers.forEach { s ->
-                    launch { gate.withPermit { onResult(s.id, client.delay(s.name, url, 6000)) } }
+                    launch { gate.withPermit { onResult(s.id, client.delayRetry(s.name, url, 6000)) } }
                 }
             }
         } finally {

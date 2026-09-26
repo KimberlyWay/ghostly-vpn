@@ -473,10 +473,7 @@ class GhostlyController(
         kotlinx.coroutines.coroutineScope {
             direct.forEach { s ->
                 launch {
-                    val ms = gate.withPermit {
-                        if (method == app.ghostly.core.model.PingMethod.ICMP) platform.icmpPing(s.host!!, 2500)
-                        else platform.tcpPing(s.host!!, s.port, 2500)
-                    }
+                    val ms = gate.withPermit { probeDirect(s, method) }
                     _pings.update { it + (s.id to Ping(ms, now())) }
                     _pinging.update { it - s.id }
                 }
@@ -492,6 +489,25 @@ class GhostlyController(
         }
         _pinging.update { it - targets.map { s -> s.id }.toSet() }
         saveUi()
+    }
+
+    /**
+     * Up to three TCP/ICMP probes: a single lost packet shouldn't mark a working server dead.
+     * Stops after two answers; the best time wins, "no answer" only when all three failed.
+     */
+    private suspend fun probeDirect(s: Server, method: app.ghostly.core.model.PingMethod): Long {
+        var best = -1L
+        var answers = 0
+        for (attempt in 0 until 3) {
+            if (answers >= 2) break
+            val ms = if (method == app.ghostly.core.model.PingMethod.ICMP) platform.icmpPing(s.host!!, 2500)
+            else platform.tcpPing(s.host!!, s.port, 2500)
+            if (ms > 0) {
+                answers++
+                if (best < 0 || ms < best) best = ms
+            }
+        }
+        return best
     }
 
     // ------------------------------------------------------------------ connection

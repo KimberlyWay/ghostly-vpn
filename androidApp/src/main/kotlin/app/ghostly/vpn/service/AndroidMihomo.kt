@@ -349,7 +349,7 @@ object AndroidMihomo : MihomoCore {
     private suspend fun measure(client: MihomoApi, servers: List<Server>, url: String, onResult: (String, Long) -> Unit) {
         val gate = Semaphore(12)
         coroutineScope {
-            servers.forEach { s -> launch { gate.withPermit { onResult(s.id, client.delay(s.name, url, 6000)) } } }
+            servers.forEach { s -> launch { gate.withPermit { onResult(s.id, client.delayRetry(s.name, url, 6000)) } } }
         }
     }
 

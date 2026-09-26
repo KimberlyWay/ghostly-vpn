@@ -23,12 +23,15 @@ class MihomoPingService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var watchdog: Job? = null
+    /** Bumped by every start: a pending self-kill only happens if no new ping came in meanwhile. */
+    @Volatile private var generation = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
+                generation++
                 val dir = intent.getStringExtra(EXTRA_DIR)
                 val session = intent.getStringExtra(EXTRA_SESSION).orEmpty()
                 scope.launch { load(dir, session) }
@@ -55,9 +58,11 @@ class MihomoPingService : Service() {
     }
 
     private fun finish() {
-        stopSelf()
+        val gen = generation
         scope.launch {
             delay(200)
+            if (gen != generation) return@launch
+            stopSelf()
             android.os.Process.killProcess(android.os.Process.myPid())
         }
     }

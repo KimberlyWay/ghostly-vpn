@@ -118,6 +118,12 @@ class MihomoApi(val port: Int, private val secret: String) {
         JsonX.parseToJsonElement(r.bodyAsText()).jsonObject["delay"]?.jsonPrimitive?.longOrNull?.takeIf { it > 0 } ?: -1L
     }.getOrDefault(-1L)
 
+    /** [delay] with a second try when the first gets no answer: one lost handshake isn't a dead server. */
+    suspend fun delayRetry(name: String, url: String, timeoutMs: Int = 5000): Long {
+        val first = delay(name, url, timeoutMs)
+        return if (first > 0) first else delay(name, url, timeoutMs)
+    }
+
     /** Proxy names of a proxy-provider, in file order. */
     suspend fun providerProxies(provider: String): List<String> = runCatching {
         val r = client.get { endpoint("providers", "proxies", provider) }
