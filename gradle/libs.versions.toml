@@ -11,6 +11,7 @@ compose-material-icons = "1.7.3"
 compose-material3 = "1.9.0"
 compose-multiplatform = "1.12.1"
 jna = "5.19.1"
+kaml = "0.104.0"
 kotlin = "2.4.20"
 kotlinx-coroutines = "1.11.0"
 kotlinx-io = "0.9.1"
@@ -22,6 +23,10 @@ xrayDesktop = "26.9.9"
 # Xray core for Android (2dust/AndroidLibXrayLite, LGPL-3.0) — downloaded by :androidApp:fetchXrayCore
 xrayCore = "26.9.9"
 xrayCoreSha256 = "9ecf4c921568d8f4cb8550d3bafe08ff6f1d1984f45a6ad183dcdf52ee9302de"
+# mihomo core for desktop: legiz-ru/Prizrak-Core release (a mihomo fork) — downloaded by :desktopApp:fetchMihomoCore
+prizrakCore = "1.19.31"
+# mihomo core for Android: commit of legiz-ru/Prizrak-Box-android (branch prizrak) — built by tools/android/build-mihomo-core.sh
+prizrakAndroid = "1aba4d7180b2e5ee8ff28624a2a9c9ffecc812d0"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
@@ -39,9 +44,11 @@ compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.re
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
 compose-uiTooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "compose-multiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "compose-multiplatform" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
+kaml = { module = "com.charleskorn.kaml:kaml", version.ref = "kaml" }
 kotlinx-io = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }

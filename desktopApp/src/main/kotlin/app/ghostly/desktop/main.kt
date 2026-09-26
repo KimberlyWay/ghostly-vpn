@@ -29,11 +29,14 @@ fun main(args: Array<String>) {
     }
     if (!first) return
     if (!platform.portable) SingleInstance.registerUrlScheme()
-    val backend = DesktopXrayBackend(platform)
-    if (hostOs == HostOs.WINDOWS) platform.killSwitch = WindowsKillSwitch(platform.dataDir, { java.io.File(backend.coreDir, DesktopXrayBackend.exeName) }, backend::isElevated)
+    val xray = DesktopXrayBackend(platform)
+    val mihomo = DesktopMihomoBackend(platform, xray)
+    val backend = app.ghostly.core.mihomo.DualCoreBackend(xray, mihomo)
+    // The kill switch lets the running core through: Xray or mihomo, whichever is up.
+    if (hostOs == HostOs.WINDOWS) platform.killSwitch = WindowsKillSwitch(platform.dataDir, { if (backend.onMihomo) mihomo.exe else java.io.File(xray.coreDir, DesktopXrayBackend.exeName) }, xray::isElevated)
     // TUN needs admin: relaunch the installed app elevated (UAC prompt) right away instead of failing on connect.
     val exe = ProcessHandle.current().info().command().orElse("")
-    if (hostOs == HostOs.WINDOWS && exe.endsWith("Ghostly.exe", true) && "--elevated" !in args && !backend.isElevated()) {
+    if (hostOs == HostOs.WINDOWS && exe.endsWith("Ghostly.exe", true) && "--elevated" !in args && !xray.isElevated()) {
         val saved = runCatching { java.io.File(platform.dataDir, "settings.json").readText() }.getOrDefault("")
         if ("\"desktopMode\":\"TUN\"" in saved.replace(" ", "")) {
             val argList = (args.toList() + "--elevated").joinToString(",") { "'" + it.replace("'", "''") + "'" }

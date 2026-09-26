@@ -50,6 +50,7 @@ kotlin {
             api(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.io)
             implementation(libs.ktor.client.core)
+            implementation(libs.kaml)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

@@ -270,6 +270,7 @@ class DesktopXrayBackend(private val platform: DesktopPlatform) : VpnBackend {
                     c.connectTimeout = 6000
                     c.readTimeout = 6000
                     c.instanceFollowRedirects = false
+                c.requestMethod = app.ghostly.core.vpn.Probe.httpMethod
                     val code = c.responseCode
                     c.disconnect()
                     code in 200..399
@@ -369,6 +370,7 @@ class DesktopXrayBackend(private val platform: DesktopPlatform) : VpnBackend {
                 c.connectTimeout = 6000
                 c.readTimeout = 6000
                 c.instanceFollowRedirects = false
+                c.requestMethod = app.ghostly.core.vpn.Probe.httpMethod
                 val code = c.responseCode
                 c.disconnect()
                 code in 200..399

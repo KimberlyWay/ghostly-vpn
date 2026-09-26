@@ -71,6 +71,9 @@ interface VpnBackend {
 
     /** Version string of the embedded core. */
     fun coreVersion(): String
+
+    /** Switch the running tunnel to [server] without reconnecting (mihomo selectors); false = reconnect instead. */
+    suspend fun switchInPlace(server: Server): Boolean = false
 }
 
 /** Things only the host platform knows. */
@@ -118,6 +121,9 @@ interface PlatformInfo {
 
     /** Can we listen on this local port? (Another VPN client often sits on 10808/10809.) */
     fun isPortFree(port: Int, listen: String): Boolean = true
+
+    /** System ping (ICMP) of [host] in ms, negative on failure or when the platform can't. */
+    suspend fun icmpPing(host: String, timeoutMs: Int): Long = -1
 
     /** TCP handshake time to host:port in ms, negative on failure (the "quick ping"). */
     suspend fun tcpPing(host: String, port: Int, timeoutMs: Int): Long = -1

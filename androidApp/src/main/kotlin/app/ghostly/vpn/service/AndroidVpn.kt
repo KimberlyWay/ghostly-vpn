@@ -6,7 +6,9 @@ import android.net.VpnService
 import androidx.core.content.ContextCompat
 import app.ghostly.core.JsonX
 import app.ghostly.core.model.AppSettings
+import app.ghostly.core.model.PingMethod
 import app.ghostly.core.model.Server
+import app.ghostly.core.vpn.Probe
 import app.ghostly.core.vpn.Traffic
 import app.ghostly.core.vpn.VpnBackend
 import app.ghostly.core.vpn.VpnState
@@ -109,6 +111,7 @@ object AndroidVpn : VpnBackend {
 
     override suspend fun ping(server: Server, url: String): Long = withContext(Dispatchers.IO) {
         val config = XrayConfigBuilder.buildPing(server) ?: return@withContext -1L
+        if (Probe.method == PingMethod.PROXY_HEAD) return@withContext AndroidHttpProbe.viaXray(config, url)
         try {
             Libv2ray.measureOutboundDelay(JsonX.encodeToString(JsonObject.serializer(), config), url)
         } catch (_: Exception) {
@@ -120,6 +123,7 @@ object AndroidVpn : VpnBackend {
     @Volatile internal var liveCore: libv2ray.CoreController? = null
 
     override suspend fun healthCheck(url: String): Long = withContext(Dispatchers.IO) {
+        if (Probe.method == PingMethod.PROXY_HEAD) appPort?.let { return@withContext AndroidHttpProbe.socks(it, url) }
         val core = liveCore ?: return@withContext -1L
         try {
             core.measureDelay(url)

@@ -57,6 +57,21 @@ val fetchXrayCore = tasks.register<FetchXrayCore>("fetchXrayCore") {
 }
 tasks.named("preBuild") { dependsOn(fetchXrayCore) }
 
+/**
+ * mihomo core (Prizrak-Core through legiz-ru's ClashMetaForAndroid bridge): built from source by
+ * tools/android/build-mihomo-core.sh into libs/ (needs Go + NDK; CI does it and caches the result).
+ */
+val mihomoAars = listOf("libs/mihomo-core.aar", "libs/mihomo-common.aar")
+val buildMihomoCore = tasks.register<Exec>("buildMihomoCore") {
+    // Plain values only in onlyIf: the configuration cache can't keep script references.
+    val ref: String = libs.versions.prizrakAndroid.get()
+    val aarFiles: List<File> = mihomoAars.map { layout.projectDirectory.file(it).asFile }
+    val marker: File = layout.projectDirectory.file("libs/.mihomo-ref").asFile
+    onlyIf { aarFiles.any { !it.isFile } || !marker.isFile || marker.readText().trim() != ref }
+    commandLine("bash", rootProject.file("tools/android/build-mihomo-core.sh").absolutePath)
+}
+tasks.named("preBuild") { dependsOn(buildMihomoCore) }
+
 // Release signing: keystore.properties (never committed) or env vars in CI.
 val signingProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
@@ -67,6 +82,8 @@ fun signing(key: String, env: String): String? = signingProps.getProperty(key) ?
 dependencies {
     implementation(projects.shared)
     implementation(files(xrayAar))
+    implementation(files(mihomoAars))
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core)
     implementation(libs.compose.foundation)

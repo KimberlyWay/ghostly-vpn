@@ -3,6 +3,8 @@ package app.ghostly.core.sub
 import app.ghostly.core.JsonX
 import app.ghostly.core.link.LinkParser
 import app.ghostly.core.link.decodeBase64Lenient
+import app.ghostly.core.mihomo.MihomoProfiles
+import app.ghostly.core.mihomo.MihomoYaml
 import app.ghostly.core.model.Server
 import app.ghostly.core.model.SubscriptionInfo
 import app.ghostly.core.model.TrafficPool
@@ -19,6 +21,8 @@ data class ParsedSubscription(
     val webPageUrl: String?,
     val updateIntervalHours: Int?,
     val servers: List<Server>,
+    /** Clash/mihomo config when the body was YAML (see [app.ghostly.core.model.Profile.mihomo]). */
+    val mihomo: JsonObject? = null,
 )
 
 object SubscriptionParser {
@@ -32,8 +36,17 @@ object SubscriptionParser {
     fun parse(body: String, headers: Map<String, String>, idPrefix: String): ParsedSubscription {
         val text = body.trim().removePrefix("﻿")
         val inlineHeaders = mutableMapOf<String, String>()
+        var mihomo: JsonObject? = null
 
         val servers: List<Server> = when {
+            MihomoYaml.looksLikeClash(text) -> {
+                text.lineSequence().map { it.trim() }.filter { it.startsWith("#") && ':' in it }.forEach { line ->
+                    inlineHeaders[line.removePrefix("#").substringBefore(':').trim().lowercase()] = line.substringAfter(':').trim()
+                }
+                val cfg = MihomoYaml.parse(text)
+                mihomo = cfg
+                MihomoProfiles.servers(cfg, idPrefix, inlineHeaders)
+            }
             text.startsWith("[") || text.startsWith("{") -> parseXrayJson(text, idPrefix)
             else -> {
                 val plain = if (text.lines().any { LinkParser.looksLikeLink(it) }) text
@@ -63,6 +76,7 @@ object SubscriptionParser {
             webPageUrl = h["profile-web-page-url"],
             updateIntervalHours = h["profile-update-interval"]?.trim()?.toIntOrNull(),
             servers = dedupeIds(servers),
+            mihomo = mihomo,
         )
     }
 

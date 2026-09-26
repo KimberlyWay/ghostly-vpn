@@ -44,7 +44,11 @@ class SubscriptionClient(private val platform: PlatformInfo) {
     val userAgent: String
         get() = "GhostlyVPN/${platform.appVersion} (${platform.os} ${platform.osVersion}; ${platform.deviceModel})"
 
-    suspend fun fetch(url: String, idPrefix: String, tunnelPort: Int? = null): ParsedSubscription = coroutineScope {
+    /** For mihomo: providers match "clash"/"mihomo" in the User-Agent and send a Clash YAML with proxy groups. */
+    val mihomoUserAgent: String
+        get() = "clash.meta/mihomo (Prizrak-Core; GhostlyVPN/${platform.appVersion}; ${platform.os})"
+
+    suspend fun fetch(url: String, idPrefix: String, tunnelPort: Int? = null, mihomo: Boolean = false): ParsedSubscription = coroutineScope {
         data class Attempt(val url: String, val client: HttpClient, val delayMs: Long)
         val mirror = mirrorOf(url)
         val attempts = buildList {
@@ -57,7 +61,7 @@ class SubscriptionClient(private val platform: PlatformInfo) {
         val jobs = attempts.map { a ->
             launch {
                 delay(a.delayMs)
-                results.send(runCatching { fetchOnce(a.client, a.url, idPrefix) })
+                results.send(runCatching { fetchOnce(a.client, a.url, idPrefix, if (mihomo) mihomoUserAgent else userAgent) })
             }
         }
         var error: Throwable? = null
@@ -78,9 +82,9 @@ class SubscriptionClient(private val platform: PlatformInfo) {
         throw error ?: SubscriptionException("Не удалось загрузить подписку")
     }
 
-    private suspend fun fetchOnce(client: HttpClient, url: String, idPrefix: String): ParsedSubscription {
+    private suspend fun fetchOnce(client: HttpClient, url: String, idPrefix: String, ua: String): ParsedSubscription {
         val response = client.get(url.trim()) {
-            header("User-Agent", userAgent)
+            header("User-Agent", ua)
             header("Accept", "*/*")
             // Same device headers Happ sends: providers use them for device limits.
             header("x-hwid", platform.hwid)
