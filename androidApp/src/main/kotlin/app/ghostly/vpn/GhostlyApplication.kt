@@ -26,12 +26,26 @@ class GhostlyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // The `:mihomo` process runs only the mihomo core: no Xray (a second Go runtime), no controller.
+        if (isMihomoProcess()) {
+            com.github.kr328.clash.common.Global.init(this)
+            return
+        }
         AndroidVpn.init(this)
+        app.ghostly.vpn.service.AndroidMihomo.init(this)
+    }
+
+    private fun isMihomoProcess(): Boolean {
+        val name = if (android.os.Build.VERSION.SDK_INT >= 28) Application.getProcessName()
+        else runCatching { java.io.File("/proc/self/cmdline").readText().trim(Char(0)) }.getOrDefault("")
+        return name.endsWith(":mihomo")
     }
 
     val platform by lazy { AndroidPlatform(this) }
 
-    val controller by lazy { GhostlyController(platform, AndroidVpn) }
+    val controller by lazy {
+        GhostlyController(platform, app.ghostly.core.mihomo.DualCoreBackend(AndroidVpn, app.ghostly.vpn.service.AndroidMihomo))
+    }
 
     companion object {
         lateinit var instance: GhostlyApplication
@@ -112,6 +126,17 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
             .sortedBy { if (it.startsWith("192.168.")) 0 else 1 }
             .firstOrNull()
     }.getOrNull()
+
+    /** System ping (ICMP): /system/bin/ping works for apps without root. */
+    override suspend fun icmpPing(host: String, timeoutMs: Int): Long = withContext(Dispatchers.IO) {
+        runCatching {
+            val p = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "${(timeoutMs / 1000).coerceAtLeast(1)}", host)
+                .redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor()
+            app.ghostly.core.vpn.Probe.parsePingOutput(out)
+        }.getOrDefault(-1L)
+    }
 
     override fun isPortFree(port: Int, listen: String): Boolean = runCatching {
         java.net.ServerSocket().use { it.reuseAddress = false; it.bind(java.net.InetSocketAddress(listen, port)) }

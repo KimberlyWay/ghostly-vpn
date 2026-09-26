@@ -431,7 +431,7 @@ fun ServerAvatar(server: Server?, size: Dp) {
         contentAlignment = Alignment.Center,
     ) {
         when {
-            flag != null -> Text(flag, fontSize = (size.value * 0.46f).sp)
+            flag != null -> app.ghostly.ui.components.FlagIcon(flag, size * 0.42f)
             server?.isAuto == true -> Icon(Icons.Rounded.AutoAwesome, null, tint = c.accent, modifier = Modifier.size(size * 0.48f))
             server?.protocol == "hysteria" -> Icon(Icons.Rounded.Bolt, null, tint = c.warn, modifier = Modifier.size(size * 0.5f))
             else -> Icon(Icons.Rounded.Shield, null, tint = c.accent, modifier = Modifier.size(size * 0.46f))

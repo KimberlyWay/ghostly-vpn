@@ -23,7 +23,7 @@ abstract class FetchXrayCore : DefaultTask() {
         if (file.isFile && file.sha256() == sha256.get()) return
         file.parentFile.mkdirs()
         val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v${version.get()}/libv2ray.aar"
-        logger.lifecycle("Downloading Xray core ${version.get()}â€¦")
+        logger.lifecycle("Downloading Xray core ${version.get()}…")
         val tmp = File(file.parentFile, file.name + ".part")
         URI(url).toURL().openStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
         val actual = tmp.sha256()
@@ -57,6 +57,85 @@ val fetchXrayCore = tasks.register<FetchXrayCore>("fetchXrayCore") {
 }
 tasks.named("preBuild") { dependsOn(fetchXrayCore) }
 
+/**
+ * mihomo core (Prizrak-Core through legiz-ru's ClashMetaForAndroid bridge): built from source by
+ * tools/android/build-mihomo-core.sh into libs/ (needs Go + NDK; CI does it and caches the result).
+ */
+val mihomoAars = listOf("libs/mihomo-core.aar", "libs/mihomo-common.aar")
+
+/**
+ * Prebuilt core from our own prerelease `mihomo-android-<ref>` (made by .github/workflows/mihomo-core.yml),
+ * checked against the SHA-256 pinned in libs.versions.toml — so Windows builds need no Go/NDK and nobody
+ * can slip in a different binary. Without pins (a new ref) it falls back to building from source.
+ */
+abstract class FetchMihomoCore : DefaultTask() {
+    @get:Input abstract val ref: Property<String>
+    @get:Input abstract val coreSha256: Property<String>
+    @get:Input abstract val commonSha256: Property<String>
+    @get:Internal abstract val libsDir: DirectoryProperty
+    @get:Internal abstract val buildScript: RegularFileProperty
+
+    @TaskAction
+    fun fetch() {
+        val dir = libsDir.get().asFile.apply { mkdirs() }
+        val marker = File(dir, ".mihomo-ref")
+        // "none" = no prebuild pinned yet for this ref (a version catalog value can't be empty).
+        val pins = mapOf("mihomo-core.aar" to coreSha256.get(), "mihomo-common.aar" to commonSha256.get())
+            .mapValues { (_, v) -> if (v == "none") "" else v }
+        val upToDate = marker.isFile && marker.readText().trim() == ref.get() &&
+            pins.all { (name, sha) -> File(dir, name).let { it.isFile && (sha.isBlank() || it.sha256() == sha) } }
+        if (upToDate) return
+        if (pins.values.any { it.isBlank() }) {
+            logger.lifecycle("mihomo core ${ref.get()} has no pinned prebuild yet — building from source (needs Go + NDK)")
+            val p = ProcessBuilder("bash", buildScript.get().asFile.absolutePath).inheritIO().start()
+            if (p.waitFor() != 0) throw GradleException(
+                "mihomo core build failed. Run the 'mihomo core for Android' workflow on GitHub and pin the SHA-256 " +
+                    "of its AARs in gradle/libs.versions.toml (prizrakAndroidCoreSha256 / prizrakAndroidCommonSha256).",
+            )
+            return
+        }
+        val tag = "mihomo-android-" + ref.get().take(12)
+        for ((name, sha) in pins) {
+            val file = File(dir, name)
+            if (file.isFile && file.sha256() == sha) continue
+            logger.lifecycle("Downloading $name ($tag)…")
+            val tmp = File(dir, "$name.part")
+            URI("https://github.com/Nelxi/ghostly-vpn/releases/download/$tag/$name").toURL().openStream()
+                .use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            val actual = tmp.sha256()
+            if (actual != sha) {
+                tmp.delete()
+                throw GradleException("$name sha256 mismatch: expected $sha, got $actual")
+            }
+            file.delete()
+            tmp.renameTo(file)
+        }
+        marker.writeText(ref.get())
+    }
+
+    private fun File.sha256(): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        inputStream().use { s ->
+            val buf = ByteArray(1 shl 16)
+            while (true) {
+                val n = s.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+}
+
+val buildMihomoCore = tasks.register<FetchMihomoCore>("buildMihomoCore") {
+    ref = libs.versions.prizrakAndroid
+    coreSha256 = libs.versions.prizrakAndroidCoreSha256
+    commonSha256 = libs.versions.prizrakAndroidCommonSha256
+    libsDir = layout.projectDirectory.dir("libs")
+    buildScript = rootProject.layout.projectDirectory.file("tools/android/build-mihomo-core.sh")
+}
+tasks.named("preBuild") { dependsOn(buildMihomoCore) }
+
 // Release signing: keystore.properties (never committed) or env vars in CI.
 val signingProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
@@ -67,6 +146,8 @@ fun signing(key: String, env: String): String? = signingProps.getProperty(key) ?
 dependencies {
     implementation(projects.shared)
     implementation(files(xrayAar))
+    implementation(files(mihomoAars))
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core)
     implementation(libs.compose.foundation)

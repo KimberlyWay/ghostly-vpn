@@ -130,6 +130,10 @@ private fun ServersList(
     val refreshing by controller.refreshing.collectAsState()
     val selected by controller.selectedServerId.collectAsState()
     val favorites by controller.favorites.collectAsState()
+    val mihomoGroups by controller.mihomoGroups.groups.collectAsState()
+    val groupsTesting by controller.mihomoGroups.testing.collectAsState()
+    var openGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
+    val listPad = LocalListPad.current
 
     var query by rememberSaveable { mutableStateOf("") }
     var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
@@ -182,6 +186,13 @@ private fun ServersList(
         if (best != null && query.isBlank()) item {
             BestRow(best, pings[best.id]?.ms) { pick(best) }
         }
+
+        if (query.isBlank()) proxyGroups(
+            mihomoGroups, openGroups, groupsTesting, listPad,
+            onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
+            onSelect = { g, m -> controller.haptic(); controller.mihomoGroups.select(g, m) },
+            onTest = { g -> controller.haptic(); controller.mihomoGroups.test(g) },
+        )
 
         val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) }
         if (favs.isNotEmpty()) {
@@ -308,7 +319,10 @@ private fun BestRow(server: Server, ms: Long?, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("Самый быстрый сейчас", style = MaterialTheme.typography.titleSmall)
             val t = server.title()
-            Text(listOfNotNull(t.flag, t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                t.flag?.let { app.ghostly.ui.components.FlagIcon(it, 11.dp); Spacer(Modifier.width(6.dp)) }
+                Text(listOfNotNull(t.title, t.subtitle).joinToString(" "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         PingPill(ms, false)
     }
@@ -404,7 +418,7 @@ private fun ServerGlyph(server: Server) {
     val flag = server.title().flag
     Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
         when {
-            flag != null -> Text(flag, fontSize = 18.sp)
+            flag != null -> app.ghostly.ui.components.FlagIcon(flag, 15.dp)
             server.isAuto -> Icon(Icons.Rounded.AutoAwesome, null, tint = c.accent, modifier = Modifier.size(19.dp))
             server.isWhitelist -> Icon(Icons.Rounded.Shield, null, tint = c.ink2, modifier = Modifier.size(18.dp))
             server.protocol == "hysteria" -> Icon(Icons.Rounded.Bolt, null, tint = c.ink2, modifier = Modifier.size(19.dp))

@@ -96,6 +96,7 @@ fun Server.protocolLabel(): String = when (protocol) {
 }
 
 fun Server.transportLabel(): String? = when {
+    protocol == app.ghostly.core.model.MIHOMO_PROFILE -> "группы: $transport"
     isAuto -> "$transport узлов"
     protocol == "hysteria" -> "QUIC"
     security == "reality" -> "${transport?.uppercase()} · Reality"

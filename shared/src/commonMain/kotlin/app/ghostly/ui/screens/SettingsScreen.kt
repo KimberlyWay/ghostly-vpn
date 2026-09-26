@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
@@ -82,8 +83,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import app.ghostly.core.GhostlyController
 import app.ghostly.core.model.AppSettings
+import app.ghostly.core.model.CoreType
 import app.ghostly.core.model.DesktopMode
 import app.ghostly.core.model.DnsPreset
+import app.ghostly.core.model.PingMethod
 import app.ghostly.core.model.RoutingMode
 import app.ghostly.core.model.SplitMode
 import app.ghostly.core.model.ThemeAccent
@@ -171,6 +174,15 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
     PageScaffold("Настройки", contentPadding, null) {
         SectionTitle("Подключение")
         Group {
+            SettingRow("Ядро", null, Icons.Rounded.Memory)
+            Segmented(listOf(CoreType.XRAY to "Xray", CoreType.MIHOMO to "mihomo"), s.core, { v -> set { it.copy(core = v) } })
+            Text(
+                when (s.core) {
+                    CoreType.XRAY -> "Xray для ссылок и JSON-подписок. Clash/mihomo-профили всё равно запускаются на mihomo."
+                    CoreType.MIHOMO -> "mihomo (Prizrak-Core): подписки приходят в формате Clash с группами-селекторами, ссылки получают группы «Авто» и «Резерв». JSON-конфиги Xray остаются на Xray."
+                },
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            )
             SettingRow("Маршрутизация", when (s.routingMode) {
                 RoutingMode.SMART -> "Умная: российские сайты напрямую"
                 RoutingMode.GLOBAL -> "Весь трафик через VPN"
@@ -588,6 +600,23 @@ private fun AdvancedPage(controller: GhostlyController, contentPadding: PaddingV
         }
         SectionTitle("Пинг")
         Group {
+            SettingRow("Способ", s.pingMethod.title, Icons.Rounded.Speed)
+            Segmented(
+                listOf(PingMethod.PROXY_GET to "GET", PingMethod.PROXY_HEAD to "HEAD", PingMethod.TCP to "TCP", PingMethod.ICMP to "ICMP"),
+                s.pingMethod, { v -> set { it.copy(pingMethod = v) } },
+            )
+            Text(
+                when (s.pingMethod) {
+                    PingMethod.PROXY_GET -> "Запрос через сервер к адресу проверки — настоящая задержка туннеля."
+                    PingMethod.PROXY_HEAD -> "То же через сервер, но запрос HEAD — без тела ответа, чуть быстрее."
+                    PingMethod.TCP -> "Только соединение с сервером: быстро, но не проверяет, что туннель работает. UDP-серверы проверяются через ядро."
+                    PingMethod.ICMP -> "Системный ping адреса сервера. Многие серверы его не пропускают — тогда будет «нет», хотя сервер рабочий."
+                },
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            )
+        }
+        if (s.pingMethod == PingMethod.PROXY_GET || s.pingMethod == PingMethod.PROXY_HEAD) SectionTitle("Адрес проверки")
+        if (s.pingMethod == PingMethod.PROXY_GET || s.pingMethod == PingMethod.PROXY_HEAD) Group {
             Segmented(
                 listOf(
                     "https://www.gstatic.com/generate_204" to "Google",
