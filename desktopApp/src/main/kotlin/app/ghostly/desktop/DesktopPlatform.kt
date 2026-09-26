@@ -27,7 +27,7 @@ class DesktopPlatform : PlatformInfo {
     }
     override val osVersion: String = System.getProperty("os.version")
     override val deviceModel: String = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrDefault("PC")
-    override val appVersion: String = System.getProperty("jpackage.app-version") ?: "0.1.0-dev"
+    override val appVersion: String = System.getProperty("jpackage.app-version") ?: "0.1.1-dev"
     override val isDesktop = true
 
     override val dataDir: String = when (hostOs) {

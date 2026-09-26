@@ -14,7 +14,14 @@ enum class RoutingMode {
 enum class SplitMode { OFF, ONLY_SELECTED, BYPASS_SELECTED }
 
 @Serializable
-enum class DesktopMode { TUN, SYSTEM_PROXY }
+enum class DesktopMode {
+    /** Whole system through a virtual adapter (needs admin). */
+    TUN,
+    /** Local proxy + the OS proxy setting (browsers and most apps). */
+    SYSTEM_PROXY,
+    /** Local SOCKS5/HTTP only; nothing in the OS is touched — point apps at it yourself. */
+    PROXY_ONLY,
+}
 
 @Serializable
 enum class DnsPreset(val title: String, val address: String?) {

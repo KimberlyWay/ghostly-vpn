@@ -96,6 +96,8 @@ class GhostlyController(
                     is VpnState.Connected -> {
                         failoverAttempts = 0
                         startGuard()
+                        // Fresh traffic numbers right after connecting (and through the tunnel if direct is blocked).
+                        if (_settings.value.autoUpdateSubs) launch(Dispatchers.IO) { kotlinx.coroutines.delay(3_000); refreshAll() }
                     }
                     is VpnState.Failed -> {
                         stopGuard()
@@ -105,7 +107,14 @@ class GhostlyController(
                 }
             }
         }
-        if (_settings.value.autoUpdateSubs) scope.launch(Dispatchers.IO) { refreshStale() }
+        // Subscriptions refresh themselves: at start, then every 15 min check whether the provider's
+        // interval (profile-update-interval) has passed.
+        scope.launch(Dispatchers.IO) {
+            while (true) {
+                if (_settings.value.autoUpdateSubs) refreshStale()
+                kotlinx.coroutines.delay(15 * 60_000L)
+            }
+        }
     }
 
     // ------------------------------------------------------------------ lookups

@@ -110,7 +110,7 @@ class DesktopXrayBackend(private val platform: DesktopPlatform) : VpnBackend {
             }
             val proxy = XrayConfigBuilder.localProxy(settings)
             val appPort0 = freePort()
-            val osPort = if (tun) 0 else freePort()
+            val osPort = if (settings.desktopMode == DesktopMode.SYSTEM_PROXY) freePort() else 0
             val ingress = if (tun) Ingress.TunSystem(settings.mtu, if (hostOs == HostOs.MACOS) "utun99" else "ghostly", proxy, appPort0)
             else Ingress.Proxy(proxy, osPort, appPort0)
 
@@ -145,7 +145,7 @@ class DesktopXrayBackend(private val platform: DesktopPlatform) : VpnBackend {
                 process = null
                 return@withContext
             }
-            if (!tun) {
+            if (!tun && settings.desktopMode == DesktopMode.SYSTEM_PROXY) {
                 osPortFile.writeText(osPort.toString())
                 runCatching { SystemProxy.enable(osPort) }
                 proxyEnabled = true

@@ -62,8 +62,26 @@ object AndroidVpn : VpnBackend {
         // unless newer ones were downloaded into files/assets.
         Seq.setContext(app)
         val assets = File(app.filesDir, "assets").apply { mkdirs() }
+        // The core reads geoip/geosite from this folder. Reading them straight out of the APK is not
+        // reliable on every device ("invalid field rule … geosite.dat > EOF"), so copy them out once
+        // per app version, like v2rayNG does.
+        copyGeoFiles(assets)
         Libv2ray.initCoreEnv(assets.absolutePath, "")
         coreReady = true
+    }
+
+    private fun copyGeoFiles(dir: File) {
+        val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).lastUpdateTime }.getOrDefault(0L)
+        val stamp = File(dir, ".geo-version")
+        if (stamp.isFile && stamp.readText() == version.toString() && File(dir, "geosite.dat").length() > 0 && File(dir, "geoip.dat").length() > 0) return
+        for (name in listOf("geoip.dat", "geosite.dat")) {
+            runCatching {
+                val tmp = File(dir, "$name.tmp")
+                app.assets.open(name).use { input -> tmp.outputStream().use { input.copyTo(it, 1 shl 16) } }
+                tmp.renameTo(File(dir, name).also { it.delete() })
+            }.onFailure { android.util.Log.e("GhostlyVpn", "copy $name failed", it) }
+        }
+        stamp.writeText(version.toString())
     }
 
     override fun needsPermission(): Boolean = VpnService.prepare(app) != null

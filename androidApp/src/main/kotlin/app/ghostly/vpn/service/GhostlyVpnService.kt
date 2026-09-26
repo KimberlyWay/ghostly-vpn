@@ -283,8 +283,8 @@ class GhostlyVpnService : VpnService() {
     private fun humanError(e: Throwable): String {
         val m = e.message.orEmpty()
         return when {
-            "config" in m.lowercase() -> "Ошибка конфигурации: ${m.take(140)}"
-            m.isNotBlank() -> m.take(180)
+            "config" in m.lowercase() -> "Ошибка конфигурации: $m"
+            m.isNotBlank() -> m
             else -> "Не удалось подключиться"
         }
     }

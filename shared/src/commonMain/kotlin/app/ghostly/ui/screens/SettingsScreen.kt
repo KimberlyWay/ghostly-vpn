@@ -171,8 +171,18 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
             }
             if (controller.platform.isDesktop) {
                 SettingRow("Режим", null, Icons.Rounded.Cable)
-                Segmented(listOf(DesktopMode.TUN to "TUN (всё)", DesktopMode.SYSTEM_PROXY to "Системный прокси"), s.desktopMode, { m -> set { it.copy(desktopMode = m) } })
-                Spacer(Modifier.height(6.dp))
+                Segmented(
+                    listOf(DesktopMode.TUN to "TUN", DesktopMode.SYSTEM_PROXY to "Системный прокси", DesktopMode.PROXY_ONLY to "Только прокси"),
+                    s.desktopMode, { m -> set { it.copy(desktopMode = m) } },
+                )
+                Text(
+                    when (s.desktopMode) {
+                        DesktopMode.TUN -> "Весь трафик компьютера, включая игры и программы без настроек прокси. Нужны права администратора."
+                        DesktopMode.SYSTEM_PROXY -> "Браузеры и большинство программ идут через VPN автоматически. Без прав администратора."
+                        DesktopMode.PROXY_ONLY -> "Ghostly поднимает только SOCKS5/HTTP-прокси и ничего не меняет в Windows — укажите его в нужных программах."
+                    },
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                )
             }
             SettingRow(
                 "Локальный прокси",

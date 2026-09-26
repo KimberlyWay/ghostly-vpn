@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.NetworkPing
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SupportAgent
@@ -260,9 +261,19 @@ fun HomeHero(m: HomeModel, controller: GhostlyController, orbSize: Dp) {
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold, fontFeatureSettings = "tnum"),
                 color = c.ok,
             )
+            is VpnState.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    st.message, style = MaterialTheme.typography.bodySmall, color = c.ink3, textAlign = TextAlign.Center,
+                    maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 420.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                app.ghostly.ui.components.SoftButton("Скопировать ошибку", {
+                    controller.platform.copyToClipboard(st.message)
+                    controller.haptic()
+                }, icon = Icons.Rounded.ContentCopy)
+            }
             else -> Text(
                 when (st) {
-                    is VpnState.Failed -> st.message
                     VpnState.Connecting -> "Устанавливаю туннель"
                     else -> if (controller.platform.isDesktop) "Нажми на призрака, чтобы включить" else "Коснись призрака, чтобы включить"
                 },
