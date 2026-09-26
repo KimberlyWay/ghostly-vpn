@@ -1,4 +1,5 @@
 import java.net.URI
+import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
@@ -83,6 +84,8 @@ abstract class FetchMihomoDesktop : DefaultTask() {
     @get:Input abstract val version: Property<String>
     @get:Input abstract val asset: Property<String>
     @get:Input abstract val exeName: Property<String>
+    /** SHA-256 of the release archive; the download is rejected on mismatch. */
+    @get:Input abstract val sha256: Property<String>
     @get:Internal abstract val target: DirectoryProperty
 
     @TaskAction
@@ -94,7 +97,16 @@ abstract class FetchMihomoDesktop : DefaultTask() {
         val url = "https://github.com/legiz-ru/Prizrak-Core/releases/download/v${version.get()}/${asset.get()}"
         logger.lifecycle("Downloading $url")
         val tmp = File(dir, out.name + ".part")
-        URI(url).toURL().openStream().use { input ->
+        val archive = File(dir, asset.get() + ".part")
+        URI(url).toURL().openStream().use { input -> archive.outputStream().use { input.copyTo(it) } }
+        val md = MessageDigest.getInstance("SHA-256")
+        archive.inputStream().use { s -> val b = ByteArray(1 shl 16); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        val actual = md.digest().joinToString("") { "%02x".format(it) }
+        if (actual != sha256.get()) {
+            archive.delete()
+            throw GradleException("${asset.get()} sha256 mismatch: expected ${sha256.get()}, got $actual")
+        }
+        archive.inputStream().use { input ->
             if (asset.get().endsWith(".zip")) {
                 ZipInputStream(input).use { zip ->
                     while (true) {
@@ -110,6 +122,7 @@ abstract class FetchMihomoDesktop : DefaultTask() {
             }
             Unit
         }
+        archive.delete()
         if (out.exists()) out.delete()
         tmp.renameTo(out)
         out.setExecutable(true, false)
@@ -123,9 +136,20 @@ val mihomoAsset = "prizrak-core-" + when (hostOs) {
     else -> if (hostArch == "arm64") "linux-arm64" else "linux-amd64-v1"
 } + "-v" + libs.versions.prizrakCore.get() + if (hostOs == "windows") ".zip" else ".gz"
 
+// Prizrak-Core 1.19.31 release archives, hashed by us when the core was pinned.
+val mihomoSha256 = mapOf(
+    "prizrak-core-windows-amd64-v1-v1.19.31.zip" to "4d13e5e2197cfb03d4c55e244fcac04d6d2922fbb821c571fb374c9c756b5b53",
+    "prizrak-core-windows-arm64-v1.19.31.zip" to "f20c95bd9cf9bc70673d4ceb60fd88a1aea278e92b4ddf9d800891296e4a63bc",
+    "prizrak-core-darwin-arm64-v1.19.31.gz" to "2484629ac58b741b9cea94bda0a349cf295582115301fb8e333fb0b3805d5fbc",
+    "prizrak-core-darwin-amd64-v1-v1.19.31.gz" to "3537cb6463ffb868d0f53e01204d265285bb2409d573d63651f3fde901d15101",
+    "prizrak-core-linux-arm64-v1.19.31.gz" to "83511d226008214476f40ac86df5800665d30fc2b8b7815e0255a843f7d6fa98",
+    "prizrak-core-linux-amd64-v1-v1.19.31.gz" to "4868b5316480d214aa0b1a255ae1914c2633083dc847edfd9b047ceec2c6fc0d",
+)
+
 val fetchMihomoCore = tasks.register<FetchMihomoDesktop>("fetchMihomoCore") {
     version = libs.versions.prizrakCore
     asset = mihomoAsset
+    sha256 = mihomoSha256[mihomoAsset] ?: error("No pinned SHA-256 for $mihomoAsset — hash the new Prizrak-Core release and add it")
     exeName = if (hostOs == "windows") "prizrak-core.exe" else "prizrak-core"
     target = layout.projectDirectory.dir("core/$hostOs-$hostArch")
     // Xray's task wipes the folder when its version changes, so it goes first.
