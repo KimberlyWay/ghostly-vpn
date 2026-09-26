@@ -63,9 +63,11 @@ tasks.named("preBuild") { dependsOn(fetchXrayCore) }
  */
 val mihomoAars = listOf("libs/mihomo-core.aar", "libs/mihomo-common.aar")
 val buildMihomoCore = tasks.register<Exec>("buildMihomoCore") {
-    val ref = libs.versions.prizrakAndroid.get()
-    val marker = layout.projectDirectory.file("libs/.mihomo-ref").asFile
-    onlyIf { mihomoAars.any { !file(it).isFile } || !marker.isFile || marker.readText().trim() != ref }
+    // Plain values only in onlyIf: the configuration cache can't keep script references.
+    val ref: String = libs.versions.prizrakAndroid.get()
+    val aarFiles: List<File> = mihomoAars.map { layout.projectDirectory.file(it).asFile }
+    val marker: File = layout.projectDirectory.file("libs/.mihomo-ref").asFile
+    onlyIf { aarFiles.any { !it.isFile } || !marker.isFile || marker.readText().trim() != ref }
     commandLine("bash", rootProject.file("tools/android/build-mihomo-core.sh").absolutePath)
 }
 tasks.named("preBuild") { dependsOn(buildMihomoCore) }
