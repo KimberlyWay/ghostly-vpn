@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import app.ghostly.core.mihomo.visibleFor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -54,7 +56,13 @@ class GhostlyController(
     private val subs = SubscriptionClient(platform)
 
     private val _profiles = MutableStateFlow(store.load(PROFILES, ListSerializer(Profile.serializer())) ?: emptyList())
-    val profiles: StateFlow<List<Profile>> = _profiles.asStateFlow()
+    /** Profiles for the chosen core only (see [app.ghostly.core.mihomo.visibleFor]). */
+    val profiles: StateFlow<List<Profile>> by lazy {
+        kotlinx.coroutines.flow.combine(_profiles, _settings) { list, s -> list.mapNotNull { it.visibleFor(s.core) } }
+            .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, visibleProfiles())
+    }
+
+    private fun visibleProfiles(): List<Profile> = _profiles.value.mapNotNull { it.visibleFor(_settings.value.core) }
 
     private val _settings = MutableStateFlow(store.load(SETTINGS, AppSettings.serializer()) ?: AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
@@ -172,7 +180,7 @@ class GhostlyController(
 
     // ------------------------------------------------------------------ lookups
 
-    fun allServers(): List<Server> = _profiles.value.flatMap { it.servers }
+    fun allServers(): List<Server> = visibleProfiles().flatMap { it.servers }
 
     fun server(id: String?): Server? = id?.let { sid -> allServers().firstOrNull { it.id == sid } }
 
@@ -330,6 +338,9 @@ class GhostlyController(
                     }
                 }
                 saveProfiles()
+                if (_settings.value.core == app.ghostly.core.model.CoreType.MIHOMO && parsed.mihomo == null && parsed.servers.all { it.config != null } && warnedXrayOnly.add(profileId)) {
+                    _events.emit("«${profile.name}»: провайдер отдаёт только формат Xray — на ядре mihomo эта подписка не показывается")
+                }
                 // Selection is id-based (profile id + index), so it survives; fall back if the server vanished.
                 if (server(_selected.value) == null) parsed.servers.firstOrNull()?.let { select(it.id) }
             } catch (e: Exception) {
@@ -339,6 +350,9 @@ class GhostlyController(
             }
         }
     }
+
+    /** Profiles already reported as "Xray format only" on mihomo (once per run, not on every auto-refresh). */
+    private val warnedXrayOnly = mutableSetOf<String>()
 
     fun refreshAll() = _profiles.value.filter { it.url != null }.forEach { refresh(it.id) }
 
@@ -741,7 +755,13 @@ class GhostlyController(
         store.save(SETTINGS, AppSettings.serializer(), after)
         if (before.startOnBoot != after.startOnBoot) runCatching { platform.setStartOnBoot(after.startOnBoot) }
         // Providers send another format to mihomo (Clash YAML with groups): fetch subscriptions again.
-        if (before.core != after.core) refreshAll()
+        if (before.core != after.core) {
+            refreshAll()
+            if (server(_selected.value) == null) {
+                _selected.value = allServers().firstOrNull()?.id
+                saveUi()
+            }
+        }
         if (backend.state.value is VpnState.Connected && tunnelAffecting(before) != tunnelAffecting(after)) {
             scope.launch { reconnect() }
         }
