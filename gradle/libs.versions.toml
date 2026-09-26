@@ -28,8 +28,8 @@ prizrakCore = "1.19.31"
 # mihomo core for Android: commit of legiz-ru/Prizrak-Box-android (branch prizrak) — built by tools/android/build-mihomo-core.sh
 prizrakAndroid = "1aba4d7180b2e5ee8ff28624a2a9c9ffecc812d0"
 # SHA-256 of the AARs published by the "mihomo core for Android" workflow for that commit
-prizrakAndroidCoreSha256 = ""
-prizrakAndroidCommonSha256 = ""
+prizrakAndroidCoreSha256 = "none"
+prizrakAndroidCommonSha256 = "none"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }

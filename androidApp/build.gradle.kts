@@ -79,7 +79,9 @@ abstract class FetchMihomoCore : DefaultTask() {
     fun fetch() {
         val dir = libsDir.get().asFile.apply { mkdirs() }
         val marker = File(dir, ".mihomo-ref")
+        // "none" = no prebuild pinned yet for this ref (a version catalog value can't be empty).
         val pins = mapOf("mihomo-core.aar" to coreSha256.get(), "mihomo-common.aar" to commonSha256.get())
+            .mapValues { (_, v) -> if (v == "none") "" else v }
         val upToDate = marker.isFile && marker.readText().trim() == ref.get() &&
             pins.all { (name, sha) -> File(dir, name).let { it.isFile && (sha.isBlank() || it.sha256() == sha) } }
         if (upToDate) return

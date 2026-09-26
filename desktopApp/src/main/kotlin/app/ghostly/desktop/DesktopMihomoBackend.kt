@@ -304,7 +304,8 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
         return best
     }
 
-    private fun randomSecret(): String = (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+    private val rng = java.security.SecureRandom()
+    private fun randomSecret(): String = (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789"[rng.nextInt(32)] }.joinToString("")
 
     companion object {
         val exeName = if (hostOs == HostOs.WINDOWS) "prizrak-core.exe" else "prizrak-core"

@@ -76,7 +76,8 @@ object AndroidMihomo : MihomoCore {
         mutableState.value = VpnState.Connecting
         try {
             val controller = freePort()
-            val secret = (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+            val rnd = java.security.SecureRandom()
+            val secret = (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789"[rnd.nextInt(32)] }.joinToString("")
             val appPort0 = freePort()
             val ingress = MihomoIngress(
                 controllerPort = controller,

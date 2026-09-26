@@ -788,9 +788,16 @@ class GhostlyController(
         UiState(_selected.value, _favorites.value, _pings.value, _onboarded.value, dismissedUpdate),
     )
 
-    private fun randomUser(): String = "ghostly_" + (1..6).map { "abcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+    private fun randomUser(): String = "ghostly_" + secureToken("abcdefghijkmnpqrstuvwxyz23456789", 6)
 
-    private fun randomPassword(): String = (1..20).map { "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789".random() }.joinToString("")
+    private fun randomPassword(): String = secureToken("ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789", 20)
+
+    /** Random string from a cryptographically secure source (Uuid.random uses the platform CSPRNG). */
+    @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
+    private fun secureToken(alphabet: String, length: Int): String {
+        val bytes = (0 until (length + 15) / 16 + 1).flatMap { kotlin.uuid.Uuid.random().toByteArray().asList() }
+        return (0 until length).joinToString("") { alphabet[(bytes[it].toInt() and 0xFF) % alphabet.length].toString() }
+    }
 
     fun regenerateProxyCredentials() = updateSettings { it.copy(proxyUser = randomUser(), proxyPass = randomPassword()) }
 
