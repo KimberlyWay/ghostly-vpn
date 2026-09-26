@@ -56,6 +56,8 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -94,6 +96,7 @@ import app.ghostly.ui.components.Segmented
 import app.ghostly.ui.components.SettingRow
 import app.ghostly.ui.components.Spinner
 import app.ghostly.ui.components.ToggleRow
+import app.ghostly.ui.components.appear
 import app.ghostly.ui.theme.Ghost
 
 private enum class Page { MAIN, ROUTING, DNS, APPS, PROXY, ADVANCED, ABOUT }
@@ -134,15 +137,25 @@ private fun PageScaffold(title: String, contentPadding: PaddingValues, onBack: (
             }
             Text(title, style = MaterialTheme.typography.headlineMedium)
         }
-        content()
+        androidx.compose.runtime.CompositionLocalProvider(LocalCascade provides remember { Cascade() }) { content() }
         Spacer(Modifier.height(28.dp))
     }
 }
 
 @Composable
 private fun Group(content: @Composable () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), padding = 10.dp) { content() }
+    val cascade = LocalCascade.current
+    val index = remember { cascade.next() }
+    GlassCard(Modifier.fillMaxWidth().appear(index, step = 55L), padding = 10.dp) { content() }
 }
+
+/** Hands out entrance order to a page's groups so they float in one after another. */
+private class Cascade {
+    private var n = 0
+    fun next() = n++
+}
+
+private val LocalCascade = androidx.compose.runtime.staticCompositionLocalOf { Cascade() }
 
 @Composable
 private fun Chevron() = Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Ghost.colors.ink3)
@@ -202,11 +215,17 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
                 s.startOnBoot, Icons.Rounded.RocketLaunch,
             ) { v -> set { it.copy(startOnBoot = v) } }
             ToggleRow("Автоподключение", "Подключаться при открытии приложения", s.autoConnect, Icons.Rounded.PowerSettingsNew) { v -> set { it.copy(autoConnect = v) } }
+            if (controller.platform.isDesktop) {
+                ToggleRow("Сворачивать в трей", "Крестик прячет окно, VPN продолжает работать. Выйти — через меню призрака в трее", s.closeToTray, Icons.Rounded.Layers) { v -> set { it.copy(closeToTray = v) } }
+            }
             ToggleRow("Переподключение", "Восстанавливать туннель при смене сети", s.autoReconnect, Icons.Rounded.Refresh) { v -> set { it.copy(autoReconnect = v) } }
             ToggleRow("Автосмена сервера", "Если сервер перестал отвечать — переключиться на самый быстрый", s.autoFailover, Icons.Rounded.SwapHoriz) { v -> set { it.copy(autoFailover = v) } }
             ToggleRow("Сторож соединения", "Каждые 20 секунд проверяет, что трафик реально идёт, и сам меняет сервер, если нет", s.smartGuard, Icons.Rounded.Shield) { v -> set { it.copy(smartGuard = v) } }
             ToggleRow("Беречь белые списки", "Сама уходит на белые списки при блокировках и возвращается на обычные серверы, как только интернет снова нормальный", s.saveWhitelist, Icons.Rounded.Savings) { v -> set { it.copy(saveWhitelist = v) } }
             ToggleRow("Обновлять подписки", "Автоматически, как просит провайдер", s.autoUpdateSubs, Icons.Rounded.AutoMode) { v -> set { it.copy(autoUpdateSubs = v) } }
+            if (controller.platform.updateAsset != null) {
+                ToggleRow("Искать обновления приложения", "Раз в несколько часов, скачивание — только по твоей кнопке", s.autoCheckUpdates, Icons.Rounded.Refresh) { v -> set { it.copy(autoCheckUpdates = v) } }
+            }
             controller.platform.systemVpnSettings?.let { open ->
                 SettingRow("Kill switch", "Системная настройка: «Постоянная VPN» + «Блокировать соединения без VPN»", Icons.Rounded.Lock, onClick = open) { Chevron() }
             }
@@ -434,7 +453,7 @@ private fun ProxyPage(controller: GhostlyController, contentPadding: PaddingValu
             if (s.proxyAuth) {
                 CredentialField("Логин", s.proxyUser, controller) { v -> set { it.copy(proxyUser = v) } }
                 Spacer(Modifier.height(8.dp))
-                CredentialField("Пароль", s.proxyPass, controller) { v -> set { it.copy(proxyPass = v) } }
+                CredentialField("Пароль", s.proxyPass, controller, secret = true) { v -> set { it.copy(proxyPass = v) } }
                 Spacer(Modifier.height(6.dp))
                 SettingRow("Сгенерировать новые", "ghostly_… и случайный пароль", Icons.Rounded.Refresh, onClick = { controller.regenerateProxyCredentials() })
             }
@@ -456,9 +475,10 @@ private fun ProxyPage(controller: GhostlyController, contentPadding: PaddingValu
         }
         val auth = if (s.proxyAuth) "${s.proxyUser}:${s.proxyPass}@" else ""
         val link = "socks5://$auth$host:${s.socksPort}"
+        val shownLink = if (s.proxyAuth) "socks5://${s.proxyUser}:••••••@$host:${s.socksPort}" else link
         GlassCard(Modifier.fillMaxWidth(), padding = 14.dp, onClick = { controller.platform.copyToClipboard(link) }) {
             Text("Нажми, чтобы скопировать", style = MaterialTheme.typography.labelSmall, color = c.ink3)
-            Text(link, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, color = c.ink))
+            Text(shownLink, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, color = c.ink))
         }
     }
 }
@@ -489,9 +509,10 @@ private fun PortField(label: String, value: Int, modifier: Modifier, onChange: (
 }
 
 @Composable
-private fun CredentialField(label: String, value: String, controller: GhostlyController, onChange: (String) -> Unit) {
+private fun CredentialField(label: String, value: String, controller: GhostlyController, secret: Boolean = false, onChange: (String) -> Unit) {
     val c = Ghost.colors
     var text by remember(value) { mutableStateOf(value) }
+    var shown by remember { mutableStateOf(!secret) }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.22f))
             .border(1.dp, c.line, RoundedCornerShape(14.dp)).padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
@@ -508,7 +529,13 @@ private fun CredentialField(label: String, value: String, controller: GhostlyCon
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.ink, fontFamily = FontFamily.Monospace),
                 cursorBrush = SolidColor(c.accent), modifier = Modifier.fillMaxWidth(),
+                visualTransformation = if (shown) androidx.compose.ui.text.input.VisualTransformation.None
+                else androidx.compose.ui.text.input.PasswordVisualTransformation('•'),
             )
+        }
+        if (secret) {
+            IconBubble(if (shown) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, { shown = !shown }, size = 36.dp)
+            Spacer(Modifier.width(6.dp))
         }
         IconBubble(Icons.Rounded.ContentCopy, { controller.platform.copyToClipboard(text) }, size = 36.dp)
     }
@@ -527,6 +554,8 @@ private fun AdvancedPage(controller: GhostlyController, contentPadding: PaddingV
             ToggleRow("Фрагментация TLS", "Режет ClientHello на части — помогает против DPI для TLS-серверов", s.fragment, Icons.Rounded.Code) { v -> set { it.copy(fragment = v) } }
             ToggleRow("Сниффинг", "Определять домен по трафику для точной маршрутизации", s.sniffing, Icons.Rounded.Speed) { v -> set { it.copy(sniffing = v) } }
             ToggleRow("IPv6", "Пускать IPv6 через туннель", s.ipv6, Icons.Rounded.Language) { v -> set { it.copy(ipv6 = v) } }
+            ToggleRow("Блокировать QUIC", "YouTube и браузеры переходят с UDP на TCP — стабильнее на мобильном интернете и в сетях, режущих UDP", s.blockQuic, Icons.Rounded.Block) { v -> set { it.copy(blockQuic = v) } }
+            ToggleRow("TCP Fast Open", "На одно рукопожатие меньше при каждом новом соединении", s.tcpFastOpen, Icons.Rounded.RocketLaunch) { v -> set { it.copy(tcpFastOpen = v) } }
             SettingRow("MTU", "${s.mtu}", Icons.Rounded.Tune)
             Segmented(listOf(1280 to "1280", 1400 to "1400", 1500 to "1500", 9000 to "9000"), s.mtu, { v -> set { it.copy(mtu = v) } })
             Spacer(Modifier.height(6.dp))
@@ -545,6 +574,23 @@ private fun AdvancedPage(controller: GhostlyController, contentPadding: PaddingV
         SectionTitle("Журнал ядра")
         Group {
             Segmented(listOf("none" to "Выкл", "error" to "Ошибки", "warning" to "Важное", "info" to "Всё", "debug" to "Debug"), s.logLevel, { v -> set { it.copy(logLevel = v) } })
+        }
+        SectionTitle("Сброс")
+        Group {
+            var armed by remember { mutableStateOf(false) }
+            LaunchedEffect(armed) { if (armed) { kotlinx.coroutines.delay(4000); armed = false } }
+            SettingRow(
+                if (armed) "Нажми ещё раз для сброса" else "Сбросить настройки",
+                "Все параметры — по умолчанию. Подписки, серверы и логин/пароль прокси остаются",
+                Icons.Rounded.Refresh,
+                onClick = {
+                    if (!armed) armed = true
+                    else {
+                        armed = false
+                        set { AppSettings(proxyUser = it.proxyUser, proxyPass = it.proxyPass, socksPort = it.socksPort, httpPort = it.httpPort) }
+                    }
+                },
+            ) {}
         }
     }
 }

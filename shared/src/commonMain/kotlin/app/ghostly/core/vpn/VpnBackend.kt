@@ -104,6 +104,9 @@ interface PlatformInfo {
     /** Hands a verified update to the OS installer (Android package installer / Windows setup). */
     fun installUpdate(path: String) {}
 
+    /** The physical network under the tunnel (drives white-list decisions). */
+    fun networkType(): NetType = NetType.UNKNOWN
+
     /** This device's address in the local network (Wi-Fi/Ethernet), for sharing the proxy. */
     fun lanAddress(): String? = null
 
@@ -125,5 +128,7 @@ interface PlatformInfo {
     /** Opens the OS page with always-on VPN / "block connections without VPN" (kill switch). */
     val systemVpnSettings: (() -> Unit)? get() = null
 }
+
+enum class NetType { WIFI, CELLULAR, ETHERNET, UNKNOWN }
 
 data class AppEntry(val packageName: String, val label: String, val isSystem: Boolean)

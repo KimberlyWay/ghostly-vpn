@@ -33,8 +33,11 @@ class DesktopPlatform : PlatformInfo {
     }
     override val osVersion: String = System.getProperty("os.version")
     override val deviceModel: String = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrDefault("PC")
-    override val appVersion: String = System.getProperty("jpackage.app-version") ?: "0.1.2-dev"
+    override val appVersion: String = System.getProperty("jpackage.app-version") ?: "0.1.4-dev"
     override val isDesktop = true
+
+    /** A PC sits on a fixed line (or Wi-Fi): treat it as Wi-Fi for white-list decisions. */
+    override fun networkType(): app.ghostly.core.vpn.NetType = app.ghostly.core.vpn.NetType.WIFI
 
     /** Installed Windows build updates itself; dev runs (java.exe) and other OSes don't. */
     override val updateAsset: String? = run {

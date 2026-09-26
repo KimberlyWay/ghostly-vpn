@@ -59,6 +59,10 @@ data class AppSettings(
     val mux: Boolean = false,
     val fragment: Boolean = false,
     val sniffing: Boolean = true,
+    /** Block UDP 443: browsers/YouTube fall back from QUIC to TCP, which many mobile networks handle better. */
+    val blockQuic: Boolean = false,
+    /** TCP Fast Open on proxy connections: one round-trip less per new connection. */
+    val tcpFastOpen: Boolean = false,
     // --- per-app (Android)
     val splitMode: SplitMode = SplitMode.OFF,
     val splitApps: Set<String> = emptySet(),
@@ -67,6 +71,8 @@ data class AppSettings(
     val socksPort: Int = 10808,
     val httpPort: Int = 10809,
     val allowLan: Boolean = false,
+    /** Desktop: the window's ✕ hides Ghostly to the tray instead of quitting. */
+    val closeToTray: Boolean = true,
     /** Local SOCKS/HTTP inbounds on phones (for Telegram proxy etc.); always on in desktop proxy mode. */
     val localProxy: Boolean = false,
     /** Login/password on the local proxies. Generated on first run: ghostly_xxxxxx + random password. */
@@ -84,6 +90,8 @@ data class AppSettings(
     /** Leave white-list servers as soon as normal internet is back (their traffic is scarce). */
     val saveWhitelist: Boolean = true,
     val autoUpdateSubs: Boolean = true,
+    /** Look for a new app version in the background (every 6 hours). */
+    val autoCheckUpdates: Boolean = true,
     val pingUrl: String = "https://www.gstatic.com/generate_204",
     val logLevel: String = "warning",
     // --- look & feel

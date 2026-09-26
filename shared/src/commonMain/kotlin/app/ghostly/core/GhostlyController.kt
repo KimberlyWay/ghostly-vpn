@@ -10,6 +10,7 @@ import app.ghostly.core.model.Server
 import app.ghostly.core.store.FileStore
 import app.ghostly.core.sub.SubscriptionClient
 import app.ghostly.core.sub.SubscriptionParser
+import app.ghostly.core.vpn.NetType
 import app.ghostly.core.vpn.PlatformInfo
 import app.ghostly.core.vpn.VpnBackend
 import app.ghostly.core.vpn.VpnState
@@ -135,7 +136,7 @@ class GhostlyController(
         scope.launch(Dispatchers.IO) {
             kotlinx.coroutines.delay(4_000)
             while (true) {
-                runCatching { updater.check() }
+                if (_settings.value.autoCheckUpdates) runCatching { updater.check() }
                 kotlinx.coroutines.delay(6 * 3_600_000L)
             }
         }
@@ -414,11 +415,12 @@ class GhostlyController(
         }
         userWantsConnection = true
         resolvePortConflicts()
-        if (_selected.value != server.id) {
-            _selected.value = server.id
+        val target = if (_settings.value.saveWhitelist) chooseForNetwork(server) else server
+        if (_selected.value != target.id) {
+            _selected.value = target.id
             saveUi()
         }
-        runCatching { backend.connect(server, _settings.value) }
+        runCatching { backend.connect(target, _settings.value) }
             .onFailure { _events.emit(it.message ?: "Не удалось подключиться") }
     }
 
@@ -508,14 +510,34 @@ class GhostlyController(
                         kotlinx.coroutines.delay(15_000)
                         continue
                     }
-                    if (s.saveWhitelist && cur.isWhitelist && backend.directProbesBypassTunnel) {
-                        regularBack = if (regularReachable()) regularBack + 1 else 0
-                        if (regularBack >= 2) {
-                            regularBack = 0
-                            bestOf(allServers().filter { !it.isAuto && !it.isWhitelist })?.let { next ->
-                                _events.emit("Обычный интернет вернулся — перешла на «${next.name}», чтобы не тратить трафик белых списков")
-                                select(next.id)
+                    val net = platform.networkType()
+                    val netChanged = lastNet != null && net != lastNet
+                    lastNet = net
+                    if (s.saveWhitelist && backend.directProbesBypassTunnel && hasWhitelistServers()) {
+                        when {
+                            // Switched Wi-Fi -> mobile while on a regular server: re-check right away.
+                            netChanged && net == NetType.CELLULAR && !cur.isWhitelist && !regularStable() -> {
+                                bestOf(whitelistServers())?.let { next ->
+                                    _events.emit("Мобильный интернет — перешла на белые списки «${next.name}»")
+                                    select(next.id)
+                                }
+                                regularBack = 0
                             }
+                            cur.isWhitelist -> {
+                                // Wi-Fi: back as soon as regular servers answer. Mobile: only when they are
+                                // stable three checks in a row (~1 min) — a flaky regular route is worse.
+                                val ok = if (net == NetType.CELLULAR) regularStable() else regularReachable()
+                                regularBack = if (ok) regularBack + 1 else 0
+                                val need = if (net == NetType.CELLULAR) 3 else 2
+                                if (regularBack >= need) {
+                                    regularBack = 0
+                                    bestOf(regularServers())?.let { next ->
+                                        _events.emit("Обычный интернет стабилен — перешла на «${next.name}», чтобы не тратить трафик белых списков")
+                                        select(next.id)
+                                    }
+                                }
+                            }
+                            else -> regularBack = 0
                         }
                     } else {
                         regularBack = 0
@@ -524,6 +546,60 @@ class GhostlyController(
                 kotlinx.coroutines.delay(20_000)
             }
         }
+    }
+
+    private var lastNet: NetType? = null
+
+    private fun whitelistServers() = allServers().filter { !it.isAuto && it.isWhitelist }
+    private fun regularServers() = allServers().filter { !it.isAuto && !it.isWhitelist }
+    private fun hasWhitelistServers() = whitelistServers().isNotEmpty()
+
+    /**
+     * Pick the pool for the current network before connecting (rules from real-life testing):
+     * Wi-Fi/cable -> regular servers, lowest ping. Mobile data -> white lists, unless regular servers
+     * answer every probe with an even ping.
+     */
+    private suspend fun chooseForNetwork(server: Server): Server {
+        if (!hasWhitelistServers() || !backend.directProbesBypassTunnel) return server
+        return when (platform.networkType()) {
+            NetType.CELLULAR -> when {
+                server.isWhitelist -> server
+                regularStable() -> server
+                else -> bestOf(whitelistServers())?.also {
+                    _events.emit("Мобильный интернет: белые списки сейчас надёжнее — подключаюсь через «${it.name}»")
+                } ?: server
+            }
+            NetType.WIFI, NetType.ETHERNET -> when {
+                !server.isWhitelist -> server
+                regularReachable() -> bestOf(regularServers())?.also {
+                    _events.emit("Wi-Fi: обычные серверы доступны — подключаюсь через «${it.name}»")
+                } ?: server
+                else -> server
+            }
+            NetType.UNKNOWN -> server
+        }
+    }
+
+    /**
+     * Regular route is usable, not just alive: 3 rounds x up to 3 servers, every probe must answer and
+     * the slowest reply may not exceed 3x the fastest (throttled mobile networks show huge jitter).
+     */
+    private suspend fun regularStable(): Boolean {
+        val regular = regularServers().filter { it.protocol != "hysteria" && it.host != null && it.port > 0 }
+            .distinctBy { it.host to it.port }.take(3)
+        if (regular.isEmpty()) return false
+        val samples = mutableListOf<Long>()
+        for (round in 0 until 3) {
+            for (r in regular) {
+                val ms = platform.tcpPing(r.host!!, r.port, 2000)
+                if (ms <= 0) return false
+                samples += ms
+            }
+            if (round < 2) kotlinx.coroutines.delay(700)
+        }
+        val min = samples.minOrNull() ?: return false
+        val max = samples.maxOrNull() ?: return false
+        return max <= maxOf(min * 3, min + 150)
     }
 
     /** Direct TCP to a few regular servers: does the network let normal VPN traffic through? */
@@ -543,7 +619,8 @@ class GhostlyController(
         val others = allServers().filter { !it.isAuto && it.id != cur.id }
         if (others.isEmpty()) return
         // White-list mode: regular servers can't be reached directly, only white-listed routes work.
-        val whitelistMode = backend.directProbesBypassTunnel && !regularReachable() && others.any { it.isWhitelist }
+        val whitelistMode = others.any { it.isWhitelist } && backend.directProbesBypassTunnel &&
+            (platform.networkType() == NetType.CELLULAR || !regularReachable())
         val pool = if (whitelistMode) others.filter { it.isWhitelist } else others.filter { !it.isWhitelist }.ifEmpty { others }
         val next = bestOf(pool.filter { it.name != cur.name }) ?: return
         _events.emit(

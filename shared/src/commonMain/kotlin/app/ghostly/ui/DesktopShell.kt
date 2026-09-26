@@ -63,6 +63,7 @@ import app.ghostly.core.GhostlyController
 import app.ghostly.core.vpn.VpnState
 import app.ghostly.ui.components.GhostMark
 import app.ghostly.ui.components.GlowBar
+import app.ghostly.ui.components.sheen
 import app.ghostly.ui.components.spotlight
 import app.ghostly.ui.screens.HomeDesktop
 import app.ghostly.ui.screens.ServersScreen
@@ -191,6 +192,7 @@ private fun NavItem(icon: ImageVector, label: String, active: Boolean, tint: Col
     val color by animateColorAsState(tint ?: if (active) c.ink else if (hovered) c.ink2 else c.ink3, Motion.quick())
     val shift by animateDpAsState(if (hovered && !active) 4.dp else 0.dp, Motion.bouncy())
     val hoverBg by animateFloatAsState(if (hovered && !active) 1f else 0f, Motion.quick())
+    val wiggle by animateFloatAsState(if (hovered) -10f else 0f, Motion.bouncy())
     Row(
         Modifier.fillMaxWidth().height(NAV_ITEM_H).clip(RoundedCornerShape(16.dp))
             .background(Color.White.copy(alpha = 0.04f * hoverBg))
@@ -199,7 +201,7 @@ private fun NavItem(icon: ImageVector, label: String, active: Boolean, tint: Col
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = if (active) c.accent else color, modifier = Modifier.offset(x = shift).size(21.dp))
+        Icon(icon, null, tint = if (active) c.accent else color, modifier = Modifier.offset(x = shift).size(21.dp).graphicsLayer { rotationZ = wiggle; val k = 1f + wiggle / -100f; scaleX = k; scaleY = k })
         Spacer(Modifier.width(12.dp))
         Text(label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium), color = color, modifier = Modifier.offset(x = shift))
     }
@@ -227,6 +229,7 @@ private fun StatusChip(state: VpnState, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(color.copy(alpha = 0.10f))
             .border(1.dp, color.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
+            .sheen(interaction, color, 0.16f)
             .pointerHoverIcon(PointerIcon.Hand)
             .clickable(interaction, null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),

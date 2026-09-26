@@ -73,6 +73,7 @@ import app.ghostly.ui.components.IconBubble
 import app.ghostly.ui.components.PingPill
 import app.ghostly.ui.components.Spinner
 import app.ghostly.ui.components.Tag
+import app.ghostly.ui.components.orbitBorder
 import app.ghostly.ui.components.pressScale
 import app.ghostly.ui.components.spotlight
 import app.ghostly.ui.components.appear
@@ -320,6 +321,7 @@ private fun ServerRow(
             .background(bg)
             .spotlight(c.accent, 160.dp)
             .border(1.dp, border, RoundedCornerShape(20.dp))
+            .orbitBorder(selected, c.accent, 20.dp)
             .clickable(interaction, null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 11.dp)
             .animateContentSize(),

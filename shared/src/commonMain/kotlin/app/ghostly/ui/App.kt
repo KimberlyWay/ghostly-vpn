@@ -79,6 +79,7 @@ import app.ghostly.ui.components.AuroraBackground
 import app.ghostly.ui.components.GhostMark
 import app.ghostly.ui.components.SoftButton
 import app.ghostly.ui.components.pressScale
+import app.ghostly.ui.components.sheen
 import app.ghostly.ui.screens.HomeScreen
 import app.ghostly.ui.screens.ServersScreen
 import app.ghostly.ui.screens.SettingsScreen
@@ -215,13 +216,16 @@ private fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier) {
             val bg by animateColorAsState(if (active) c.accent.copy(alpha = 0.2f) else Color.Transparent, Motion.quick())
             val tint by animateColorAsState(if (active) c.accent else c.ink3, Motion.quick())
             val w by animateDpAsState(if (active) 122.dp else 56.dp, Motion.bouncy())
+            // The chosen tab's icon pops and tilts a little, like a tap on the site's dock.
+            val pop by animateFloatAsState(if (active) 1f else 0f, Motion.bouncy())
             Row(
                 Modifier.width(w).height(48.dp).pressScale(interaction, 0.9f).clip(RoundedCornerShape(24.dp)).background(bg)
                     .clickable(interaction, null) { onSelect(t) },
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (t == Tab.HOME) GhostMark(Modifier.size(24.dp), happy = if (active) 1f else 0f, pokeable = false)
-                else Icon(if (t == Tab.SERVERS) Icons.Rounded.Dns else Icons.Rounded.Settings, null, tint = tint, modifier = Modifier.size(22.dp))
+                val iconFx = Modifier.graphicsLayer { val k = 1f + 0.08f * pop; scaleX = k; scaleY = k; rotationZ = if (t == Tab.SETTINGS) 60f * pop else -6f * pop }
+                if (t == Tab.HOME) GhostMark(Modifier.size(24.dp).then(iconFx), happy = if (active) 1f else 0f, pokeable = false)
+                else Icon(if (t == Tab.SERVERS) Icons.Rounded.Dns else Icons.Rounded.Settings, null, tint = tint, modifier = Modifier.size(22.dp).then(iconFx))
                 AnimatedVisibility(active, enter = fadeIn() + scaleIn(initialScale = 0.6f), exit = fadeOut() + scaleOut(targetScale = 0.6f)) {
                     Text(t.title, style = MaterialTheme.typography.labelMedium, color = tint, modifier = Modifier.padding(start = 7.dp), maxLines = 1)
                 }
@@ -315,6 +319,7 @@ private fun SourceTile(label: String, icon: ImageVector, modifier: Modifier, onC
         modifier.pressScale(interaction, 0.94f).clip(RoundedCornerShape(20.dp))
             .background(Brush.verticalGradient(listOf(c.accent.copy(alpha = 0.14f), c.accent2.copy(alpha = 0.06f))))
             .border(1.dp, c.accent.copy(alpha = 0.22f), RoundedCornerShape(20.dp))
+            .sheen(interaction, strength = 0.14f)
             .clickable(interaction, null, onClick = onClick).padding(vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

@@ -127,6 +127,23 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
         }.getOrDefault(-1L)
     }
 
+    /** Underlying network (not our VPN): Wi-Fi vs mobile decides white-list behaviour. */
+    override fun networkType(): app.ghostly.core.vpn.NetType = runCatching {
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+        @Suppress("DEPRECATION")
+        val nets = cm.allNetworks.mapNotNull { cm.getNetworkCapabilities(it) }
+            .filter {
+                it.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    !it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)
+            }
+        when {
+            nets.any { it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) } -> app.ghostly.core.vpn.NetType.WIFI
+            nets.any { it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) } -> app.ghostly.core.vpn.NetType.ETHERNET
+            nets.any { it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) } -> app.ghostly.core.vpn.NetType.CELLULAR
+            else -> app.ghostly.core.vpn.NetType.UNKNOWN
+        }
+    }.getOrDefault(app.ghostly.core.vpn.NetType.UNKNOWN)
+
     override val updateAsset: String = when (Build.SUPPORTED_ABIS.firstOrNull()) {
         "arm64-v8a" -> "Ghostly-Android.apk"
         "armeabi-v7a" -> "Ghostly-Android-armv7.apk"

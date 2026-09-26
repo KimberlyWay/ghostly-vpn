@@ -1,5 +1,7 @@
 package app.ghostly.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -30,7 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -47,6 +53,8 @@ import app.ghostly.ui.theme.LocalReduceMotion
 import app.ghostly.ui.theme.Motion
 import kotlinx.coroutines.delay
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -137,7 +145,8 @@ fun GlassCard(
             ),
             shape,
         )
-    if (onClick != null) m = m.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+    m = if (onClick != null) m.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+    else m.hoverable(interaction) // plain cards light up under the cursor too, like the site
     Column(m.padding(padding), content = content)
 }
 
@@ -207,6 +216,60 @@ fun Modifier.appear(index: Int, step: Long = 35L, enabled: Boolean = true): Modi
         translationY = (1f - p) * 18.dp.toPx()
         val s = 0.96f + 0.04f * p
         scaleX = s; scaleY = s
+    }
+}
+
+/** Diagonal light band that sweeps across a surface each time the cursor enters it (the site's button shine). */
+fun Modifier.sheen(interaction: MutableInteractionSource, color: Color = Color.White, strength: Float = 0.26f): Modifier = composed {
+    val hovered by interaction.collectIsHoveredAsState()
+    val reduce = LocalReduceMotion.current
+    val p = remember { Animatable(1f) }
+    LaunchedEffect(hovered) {
+        if (hovered && !reduce) {
+            p.snapTo(0f)
+            p.animateTo(1f, tween(760, easing = FastOutSlowInEasing))
+        }
+    }
+    drawWithContent {
+        drawContent()
+        val v = p.value
+        if (v < 0.999f) {
+            val band = size.width * 0.32f
+            val x = -band + (size.width + band * 2) * v
+            drawRect(
+                Brush.linearGradient(
+                    listOf(Color.Transparent, color.copy(alpha = strength), Color.Transparent),
+                    start = Offset(x - band, 0f), end = Offset(x + band, size.height),
+                ),
+            )
+        }
+    }
+}
+
+/** A light arc that orbits the border of the selected item (fades in/out with [active]). */
+fun Modifier.orbitBorder(active: Boolean, color: Color, corner: Dp, width: Dp = 1.5.dp): Modifier = composed {
+    val a by animateFloatAsState(if (active) 1f else 0f, tween(450))
+    val reduce = LocalReduceMotion.current
+    val phase = if (active && !reduce) {
+        val t = rememberInfiniteTransition()
+        t.animateFloat(0f, 1f, infiniteRepeatable(tween(3400, easing = LinearEasing))).value
+    } else 0.125f
+    drawWithContent {
+        drawContent()
+        if (a > 0.01f) {
+            val n = 36
+            val stops = Array(n + 1) { i ->
+                val x = i.toFloat() / n
+                val d = abs(x - phase).let { min(it, 1f - it) }
+                x to color.copy(alpha = a * (1f - d / 0.17f).coerceIn(0f, 1f))
+            }
+            val sw = width.toPx()
+            drawRoundRect(
+                Brush.sweepGradient(*stops, center = center),
+                topLeft = Offset(sw / 2, sw / 2), size = Size(size.width - sw, size.height - sw),
+                cornerRadius = CornerRadius(corner.toPx() - sw / 2), style = Stroke(sw),
+            )
+        }
     }
 }
 

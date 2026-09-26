@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -80,7 +82,8 @@ fun PingPill(ms: Long?, loading: Boolean, modifier: Modifier = Modifier) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(animated))
         }
         Spacer(Modifier.width(6.dp))
-        Text(
+        // Digits roll like on the site's counters; the words just swap.
+        RollingText(
             when {
                 loading -> "···"
                 ms == null -> "—"
@@ -114,6 +117,7 @@ fun AccentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifie
             .pressScale(interaction, 0.96f)
             .clip(RoundedCornerShape(18.dp))
             .background(Brush.linearGradient(listOf(c.accent, c.accent2)))
+            .sheen(interaction)
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
             .clickable(interaction, null, enabled = enabled, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 15.dp),
@@ -128,12 +132,16 @@ fun AccentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifie
 @Composable
 fun SoftButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: ImageVector? = null, tint: Color = Ghost.colors.ink) {
     val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(Color.White.copy(alpha = if (hovered) 0.1f else 0.06f), Motion.quick())
+    val edge by animateColorAsState(if (hovered) Ghost.colors.accent.copy(alpha = 0.5f) else Ghost.colors.line, Motion.quick())
     Row(
         modifier
             .pressScale(interaction, 0.96f)
             .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.06f))
-            .border(1.dp, Ghost.colors.line, RoundedCornerShape(18.dp))
+            .background(bg)
+            .sheen(interaction, strength = 0.1f)
+            .border(1.dp, edge, RoundedCornerShape(18.dp))
             .clickable(interaction, null, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.Center,
@@ -148,17 +156,28 @@ fun SoftButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 fun IconBubble(icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 42.dp, tint: Color = Ghost.colors.ink2, active: Boolean = false) {
     val c = Ghost.colors
     val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val bg by animateColorAsState(
+        when {
+            active -> c.accent.copy(alpha = 0.18f)
+            hovered -> c.accent.copy(alpha = 0.12f)
+            else -> Color.White.copy(alpha = 0.06f)
+        },
+        Motion.quick(),
+    )
+    val edge by animateColorAsState(if (active || hovered) c.accent.copy(alpha = 0.4f) else c.line, Motion.quick())
+    val tilt by animateFloatAsState(if (hovered) -8f else 0f, Motion.bouncy())
     Box(
         modifier
             .size(size)
-            .pressScale(interaction, 0.88f)
+            .pressScale(interaction, 0.88f, hover = 1.08f)
             .clip(CircleShape)
-            .background(if (active) c.accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.06f))
-            .border(1.dp, if (active) c.accent.copy(alpha = 0.4f) else c.line, CircleShape)
+            .background(bg)
+            .border(1.dp, edge, CircleShape)
             .clickable(interaction, null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, null, tint = if (active) c.accent else tint, modifier = Modifier.size(size * 0.46f))
+        Icon(icon, null, tint = if (active || hovered) c.accent else tint, modifier = Modifier.size(size * 0.46f).graphicsLayer { rotationZ = tilt })
     }
 }
 
@@ -167,11 +186,13 @@ fun IconBubble(icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modi
 @Composable
 fun GhostSwitch(checked: Boolean, modifier: Modifier = Modifier) {
     val c = Ghost.colors
-    val knob by animateDpAsState(if (checked) 20.dp else 0.dp, Motion.bouncy())
+    val f by animateFloatAsState(if (checked) 1f else 0f, Motion.bouncy())
     val track by animateColorAsState(if (checked) c.accent else Color.White.copy(alpha = 0.12f), Motion.quick())
+    // Liquid knob: stretches mid-flight, like a drop being dragged.
+    val stretch = (4f * f * (1f - f)).coerceIn(0f, 1f) * 8f
     Box(modifier.size(46.dp, 26.dp).clip(CircleShape).background(track).padding(3.dp)) {
         Box(
-            Modifier.offset(x = knob).size(20.dp).clip(CircleShape)
+            Modifier.offset(x = (20f * f - stretch * f).dp).size((20f + stretch).dp, 20.dp).clip(CircleShape)
                 .background(if (checked) c.accentInk else Color.White.copy(alpha = 0.85f)),
         )
     }
@@ -187,15 +208,27 @@ fun SettingRow(
 ) {
     val c = Ghost.colors
     val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val pressed by interaction.collectIsPressedAsState()
+    val live = onClick != null && (hovered || pressed)
+    val bg by animateColorAsState(Color.White.copy(alpha = if (pressed) 0.07f else if (live) 0.045f else 0f), Motion.quick())
+    val lift by animateFloatAsState(if (live) 1f else 0f, Motion.bouncy())
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .then(if (onClick != null) Modifier.clickable(interaction, null, onClick = onClick) else Modifier)
+            .background(bg)
+            .then(if (onClick != null) Modifier.spotlight(c.accent, 180.dp).clickable(interaction, null, onClick = onClick) else Modifier)
             .padding(vertical = 11.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(c.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(34.dp)
+                    .graphicsLayer { val s = 1f + 0.08f * lift; scaleX = s; scaleY = s; rotationZ = -6f * lift }
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(c.accent.copy(alpha = 0.13f + 0.1f * lift)),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(icon, null, tint = c.accent, modifier = Modifier.size(18.dp))
             }
             Spacer(Modifier.width(13.dp))
@@ -205,7 +238,8 @@ fun SettingRow(
             subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis) }
         }
         Spacer(Modifier.width(10.dp))
-        trailing()
+        // Chevrons and values lean towards the cursor a bit.
+        Row(Modifier.graphicsLayer { translationX = 3.dp.toPx() * lift }, verticalAlignment = Alignment.CenterVertically) { trailing() }
     }
 }
 

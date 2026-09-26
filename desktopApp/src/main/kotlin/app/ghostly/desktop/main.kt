@@ -2,6 +2,7 @@ package app.ghostly.desktop
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.DpSize
@@ -50,7 +51,9 @@ fun main(args: Array<String>) {
     // ghostly://… or a subscription URL passed on the command line (e.g. from a URL handler).
     args.firstOrNull { !it.startsWith("--") }?.let { c.import(it) }
     val autostart = "--autostart" in args
-    if (autostart && c.settings.value.startOnBoot) {
+    val resume = java.io.File(platform.dataDir, "run/resume")
+    val resumeAfterUpdate = resume.isFile.also { if (it) resume.delete() }
+    if ((autostart && c.settings.value.startOnBoot) || resumeAfterUpdate) {
         kotlinx.coroutines.runBlocking { c.connect() }
     }
 
@@ -62,21 +65,53 @@ fun main(args: Array<String>) {
         val windowState = rememberWindowState(
             size = DpSize(1180.dp, 780.dp),
             position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center),
-            isMinimized = autostart,
+            isMinimized = false,
         )
+
+        var visible by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(!autostart) }
+        val trayState = androidx.compose.ui.window.rememberTrayState()
+        var trayHintShown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
         fun quit() {
             runBlocking { c.disconnect() }
             exitApplication()
         }
-        platform.quitForUpdate = { javax.swing.SwingUtilities.invokeLater { quit() } }
+
+        fun show() {
+            visible = true
+            windowState.isMinimized = false
+        }
+
+        // ✕ keeps Ghostly (and the VPN) running in the tray, like other VPN clients.
+        fun closeWindow() {
+            if (!c.settings.value.closeToTray) return quit()
+            visible = false
+            if (!trayHintShown) {
+                trayHintShown = true
+                trayState.sendNotification(
+                    androidx.compose.ui.window.Notification(
+                        "Ghostly работает в трее",
+                        if (c.state.value is VpnState.Connected) "VPN остаётся включённым. Открыть — клик по призраку в трее." else "Открыть — клик по призраку в трее.",
+                    ),
+                )
+            }
+        }
+        platform.quitForUpdate = {
+            // Remember that the VPN was on: the relaunched (updated) Ghostly reconnects by itself.
+            if (c.state.value is VpnState.Connected) runCatching {
+                java.io.File(platform.dataDir, "run/resume").apply { parentFile.mkdirs() }.writeText("1")
+            }
+            javax.swing.SwingUtilities.invokeLater { quit() }
+        }
 
         if (icon != null) {
             Tray(
                 icon = icon,
+                state = trayState,
                 tooltip = if (state is VpnState.Connected) "Ghostly — защищено" else "Ghostly",
-                onAction = { windowState.isMinimized = false },
+                onAction = ::show,
                 menu = {
+                    Item("Открыть Ghostly", onClick = ::show)
                     Item(if (state is VpnState.Connected) "Отключить" else "Подключить", onClick = { c.toggle() })
                     Separator()
                     Item("Выход", onClick = ::quit)
@@ -85,15 +120,17 @@ fun main(args: Array<String>) {
         }
 
         Window(
-            onCloseRequest = ::quit,
+            onCloseRequest = ::closeWindow,
             state = windowState,
             title = "Ghostly",
             icon = icon,
+            visible = visible,
         ) {
             window.minimumSize = java.awt.Dimension(380, 600)
             if (hostOs == HostOs.WINDOWS) WindowsChrome.darkTitleBar(window)
             androidx.compose.runtime.LaunchedEffect(raise.intValue) {
                 if (raise.intValue > 0) {
+                    visible = true
                     windowState.isMinimized = false
                     window.toFront()
                     window.requestFocus()

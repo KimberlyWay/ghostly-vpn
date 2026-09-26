@@ -77,6 +77,7 @@ object XrayConfigBuilder {
         outbounds = ensureService(outbounds)
         outbounds = applyMux(outbounds, settings)
         outbounds = applyFragment(outbounds, settings)
+        outbounds = applyFastOpen(outbounds, settings)
         cfg["outbounds"] = JsonArray(outbounds)
 
         cfg["routing"] = routing(cfg["routing"] as? JsonObject, settings, fromProvider = server.config != null)
@@ -251,6 +252,20 @@ object XrayConfigBuilder {
         }
     }
 
+    private fun applyFastOpen(outbounds: List<JsonObject>, settings: AppSettings): List<JsonObject> {
+        if (!settings.tcpFastOpen) return outbounds
+        return outbounds.map { ob ->
+            val protocol = ob["protocol"]?.jsonPrimitive?.contentOrNull
+            val stream = ob["streamSettings"] as? JsonObject
+            val net = stream?.get("network")?.jsonPrimitive?.contentOrNull
+            if (protocol !in setOf("vless", "vmess", "trojan", "shadowsocks") || net in setOf("hysteria", "kcp", "quic")) return@map ob
+            val sockopt = (stream?.get("sockopt") as? JsonObject).orEmpty()
+            if ("tcpFastOpen" in sockopt) return@map ob
+            val newStream = JsonObject(stream.orEmpty() + ("sockopt" to JsonObject(sockopt + ("tcpFastOpen" to JsonPrimitive(true)))))
+            JsonObject(ob + ("streamSettings" to newStream))
+        }
+    }
+
     /** TLS ClientHello fragmentation against DPI: TLS proxies dial through a fragmenting freedom. */
     private fun applyFragment(outbounds: List<JsonObject>, settings: AppSettings): List<JsonObject> {
         if (!settings.fragment) return outbounds
@@ -294,6 +309,9 @@ object XrayConfigBuilder {
         val userRules = buildList {
             if (settings.blockDomains.isNotEmpty()) add(rule(domain = settings.blockDomains.map(::domainRule), outbound = BLOCK))
             if (settings.blockAds) add(rule(domain = listOf("geosite:category-ads-all"), outbound = BLOCK))
+            if (settings.blockQuic) add(buildJsonObject {
+                put("type", "field"); put("network", "udp"); put("port", "443"); put("outboundTag", BLOCK)
+            })
             if (settings.directDomains.isNotEmpty()) add(rule(domain = settings.directDomains.map(::domainRule), outbound = DIRECT))
             if (settings.proxyDomains.isNotEmpty()) {
                 // Forced proxy: reuse whatever the catch-all rule points at (a balancer or "proxy").
