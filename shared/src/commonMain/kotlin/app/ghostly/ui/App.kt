@@ -220,7 +220,7 @@ private fun TabBar(selected: Tab, onSelect: (Tab) -> Unit, modifier: Modifier) {
                     .clickable(interaction, null) { onSelect(t) },
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (t == Tab.HOME) GhostMark(Modifier.size(24.dp), happy = if (active) 1f else 0f)
+                if (t == Tab.HOME) GhostMark(Modifier.size(24.dp), happy = if (active) 1f else 0f, pokeable = false)
                 else Icon(if (t == Tab.SERVERS) Icons.Rounded.Dns else Icons.Rounded.Settings, null, tint = tint, modifier = Modifier.size(22.dp))
                 AnimatedVisibility(active, enter = fadeIn() + scaleIn(initialScale = 0.6f), exit = fadeOut() + scaleOut(targetScale = 0.6f)) {
                     Text(t.title, style = MaterialTheme.typography.labelMedium, color = tint, modifier = Modifier.padding(start = 7.dp), maxLines = 1)

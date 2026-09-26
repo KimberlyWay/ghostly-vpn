@@ -50,6 +50,12 @@ object SingleInstance {
         return true
     }
 
+    /** Frees the instance slot (we are handing over to an elevated copy). */
+    fun release() {
+        runCatching { server?.close() }
+        server = null
+    }
+
     /** Registers `ghostly://` for the installed app (per user, no admin): links in the browser open Ghostly. */
     fun registerUrlScheme() {
         if (hostOs != HostOs.WINDOWS) return
