@@ -25,7 +25,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -159,6 +165,19 @@ fun GhostlyApp(controller: GhostlyController) {
             // Music on the PC: the whole composition plays along (dimming, rim lights, drop flash, sparks).
             stage?.let { app.ghostly.ui.stage.StageOverlay(it) }
 
+            // Server picker: our own sheet, not Material's ModalBottomSheet. That one opened half-way
+            // and shared every vertical swipe between dragging itself and scrolling the list (the list
+            // "sometimes scrolls, sometimes not"), and its dialog window could swallow the next tap.
+            // Here the list owns all scrolling; only the handle drags the sheet down.
+            PickerSheet(pickerOpen, onClose = { pickerOpen = false }) {
+                Text("Выбор сервера", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 22.dp))
+                ServersScreen(
+                    controller, PaddingValues(bottom = insets.calculateBottomPadding() + 24.dp),
+                    onAdd = { pickerOpen = false; addOpen = true },
+                    onPicked = { pickerOpen = false }, showHeader = false,
+                )
+            }
+
             // Toast
             AnimatedVisibility(
                 toast != null,
@@ -192,22 +211,63 @@ fun GhostlyApp(controller: GhostlyController) {
                 containerColor = Color(0xFF110C1A), scrimColor = Color.Black.copy(alpha = 0.55f),
             ) { AddSheet(controller) { addOpen = false } }
         }
-        if (pickerOpen) {
-            ModalBottomSheet(
-                onDismissRequest = { pickerOpen = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
-                containerColor = Color(0xFF110C1A), scrimColor = Color.Black.copy(alpha = 0.55f),
-            ) {
-                Text("Выбор сервера", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 22.dp))
-                ServersScreen(
-                    controller, PaddingValues(bottom = 24.dp),
-                    onAdd = { pickerOpen = false; addOpen = true },
-                    onPicked = { pickerOpen = false }, showHeader = false,
-                )
-            }
-        }
     }
 }}
+
+// ---------------------------------------------------------------------------- picker sheet
+
+/** Bottom sheet over the whole app: scrim, a tall panel sliding up, back gesture and a drag-down handle close it. */
+@Composable
+private fun BoxScope.PickerSheet(
+    open: Boolean,
+    onClose: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    androidx.compose.ui.backhandler.BackHandler(enabled = open, onBack = onClose)
+    AnimatedVisibility(open, enter = fadeIn(Motion.quick(220)), exit = fadeOut(Motion.quick(180)), modifier = Modifier.matchParentSize()) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
+                .clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
+        )
+    }
+    AnimatedVisibility(
+        open,
+        enter = slideInVertically(Motion.quick(320)) { it },
+        exit = slideOutVertically(Motion.quick(220)) { it },
+        modifier = Modifier.align(Alignment.BottomCenter),
+    ) {
+        val scope = rememberCoroutineScope()
+        val drag = remember { androidx.compose.animation.core.Animatable(0f) }
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val closeAt = with(density) { 120.dp.toPx() }
+        Column(
+            Modifier.widthIn(max = 620.dp).fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .graphicsLayer { translationY = drag.value }
+                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                .background(Color(0xFF110C1A))
+                // Taps on the panel itself must not fall through to the scrim.
+                .clickable(remember { MutableInteractionSource() }, null) {},
+        ) {
+            Box(
+                Modifier.fillMaxWidth().height(34.dp).draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { d ->
+                        scope.launch { drag.snapTo((drag.value + d).coerceAtLeast(0f)) }
+                    },
+                    onDragStopped = { v ->
+                        if (drag.value > closeAt || v > 1800f) onClose()
+                        else drag.animateTo(0f, Motion.bouncy())
+                    },
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.28f)))
+            }
+            content()
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------- tab bar
 
