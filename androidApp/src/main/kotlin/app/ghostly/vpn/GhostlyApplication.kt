@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
+import app.ghostly.core.vpn.Haptic
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
@@ -101,10 +102,8 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
     /** The visible activity's window, for system haptics (set by MainActivity). */
     @Volatile var hapticView: java.lang.ref.WeakReference<android.view.View>? = null
 
-    override fun haptic() {
-        // The motor's own "click" first — it plays on every ROM with a vibrator (Nothing OS, MIUI, One UI).
-        // (0.2.2 asked the window for CONTEXT_CLICK, a mouse-context haptic some ROMs "perform" silently.)
-        if (vibrateClick()) return
+    override fun haptic(kind: Haptic) {
+        if (vibrate(kind)) return
         val view = hapticView?.get() ?: return
         val run = Runnable {
             @Suppress("DEPRECATION")
@@ -113,19 +112,55 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else view.post(run)
     }
 
-    /** The motor's predefined "click" (a 40 ms pulse on old Android); false when there is no vibrator. */
-    private fun vibrateClick(): Boolean {
-        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
-            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
-        }
-        if (vibrator == null || !vibrator.hasVibrator()) return false
+    private val vibrator: Vibrator? by lazy {
+        if (Build.VERSION.SDK_INT >= 31) context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
+    }
+
+    /**
+     * Linear motors (Nothing, Pixel, Samsung flagships) get composed system primitives — crisp and
+     * strong; others a pulse of a set amplitude. Tagged as hardware feedback, which the ROM's
+     * "touch feedback" setting doesn't mute (the plain EFFECT_CLICK of 0.2.4 was felt on almost no phone).
+     */
+    private fun vibrate(kind: Haptic): Boolean {
+        val v = vibrator ?: return false
+        if (!v.hasVibrator()) return false
         return runCatching {
-            val effect = if (Build.VERSION.SDK_INT >= 29) VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-            else VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE)
-            vibrator.vibrate(effect)
+            val e = effect(v, kind)
+            if (Build.VERSION.SDK_INT >= 33) {
+                v.vibrate(e, android.os.VibrationAttributes.createForUsage(android.os.VibrationAttributes.USAGE_HARDWARE_FEEDBACK))
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(e, android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build())
+            }
         }.isSuccess
+    }
+
+    private fun effect(v: Vibrator, kind: Haptic): VibrationEffect {
+        if (Build.VERSION.SDK_INT >= 30) {
+            fun has(vararg p: Int) = v.areAllPrimitivesSupported(*p)
+            val thud = if (Build.VERSION.SDK_INT >= 31 && has(VibrationEffect.Composition.PRIMITIVE_THUD)) VibrationEffect.Composition.PRIMITIVE_THUD else VibrationEffect.Composition.PRIMITIVE_CLICK
+            if (has(VibrationEffect.Composition.PRIMITIVE_CLICK, VibrationEffect.Composition.PRIMITIVE_TICK)) {
+                val comp = VibrationEffect.startComposition()
+                when (kind) {
+                    Haptic.TICK -> comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, 1f)
+                    Haptic.CLICK -> comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f)
+                    Haptic.HEAVY -> comp.addPrimitive(thud, 1f).addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f, 20)
+                    Haptic.SUCCESS -> comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 0.7f).addPrimitive(thud, 1f, 70)
+                    Haptic.ERROR -> comp.addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f).addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f, 60).addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f, 60)
+                }
+                return comp.compose()
+            }
+        }
+        val amp = v.hasAmplitudeControl()
+        fun pulse(ms: Long, a: Int) = VibrationEffect.createOneShot(ms, if (amp) a else VibrationEffect.DEFAULT_AMPLITUDE)
+        return when (kind) {
+            Haptic.TICK -> pulse(12, 160)
+            Haptic.CLICK -> pulse(22, 255)
+            Haptic.HEAVY -> pulse(45, 255)
+            Haptic.SUCCESS -> VibrationEffect.createWaveform(longArrayOf(0, 20, 70, 40), if (amp) intArrayOf(0, 180, 0, 255) else intArrayOf(0, 255, 0, 255), -1)
+            Haptic.ERROR -> VibrationEffect.createWaveform(longArrayOf(0, 25, 50, 25, 50, 25), if (amp) intArrayOf(0, 255, 0, 255, 0, 255) else intArrayOf(0, 255, 0, 255, 0, 255), -1)
+        }
     }
 
     override fun lanAddress(): String? = runCatching {

@@ -16,7 +16,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class ReleaseFile(val size: Long = 0, val sha256: String)
+data class ReleaseFile(
+    val size: Long = 0,
+    val sha256: String,
+    /**
+     * Version of this very file. A release that changes one platform only reuses the other one's
+     * previous build, which still reports its own version — comparing against the release number
+     * would offer that same file forever. Absent in manifests before 0.2.7 → the release version.
+     */
+    val version: String? = null,
+)
 
 /** `/dl/latest.json`, published next to every release. */
 @Serializable
@@ -77,10 +86,12 @@ class Updater(private val platform: PlatformInfo, private val isDismissed: (Stri
             _lastCheck.value = "${stamp()}: в версии ${manifest.version} нет файла $asset"
             return null
         }
-        _lastCheck.value = "${stamp()}: на сервере ${manifest.version}, у тебя ${platform.appVersion}" +
-            if (compareVersions(manifest.version, platform.appVersion) > 0) " — есть обновление" else " — всё свежее"
-        val newer = compareVersions(manifest.version, platform.appVersion) > 0
-        val offer = if (newer && (force || !isDismissed(manifest.version))) UpdateOffer(manifest.version, asset, file.sha256, file.size) else null
+        val latest = file.version ?: manifest.version
+        _lastCheck.value = "${stamp()}: на сервере $latest, у тебя ${platform.appVersion}" +
+            if (compareVersions(latest, platform.appVersion) > 0) " — есть обновление" else " — всё свежее"
+        val newer = compareVersions(latest, platform.appVersion) > 0
+        // offer.version also picks the download folder (/dl/<version>/, GitHub v<version>): a reused file lives in its own.
+        val offer = if (newer && (force || !isDismissed(latest))) UpdateOffer(latest, asset, file.sha256, file.size) else null
         _offer.value = offer
         return offer
     }

@@ -289,7 +289,7 @@ private fun ReadyCard(m: HomeModel, controller: GhostlyController) {
             Spacer(Modifier.width(12.dp))
             app.ghostly.ui.components.AccentButton(
                 if (m.orb == OrbState.CONNECTING) "Подключаю…" else "Подключить",
-                { controller.haptic(); controller.toggle() },
+                { controller.haptic(app.ghostly.core.vpn.Haptic.HEAVY); controller.toggle() },
                 icon = Icons.Rounded.Bolt,
                 enabled = server != null && m.orb != OrbState.CONNECTING,
             )
