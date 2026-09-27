@@ -71,7 +71,7 @@ object AndroidMihomo : MihomoCore {
         }, IntentFilter(MihomoVpnService.ACTION_STATE), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
-    override suspend fun connect(server: Server, profile: Profile?, settings: AppSettings): Unit = withContext(Dispatchers.IO) {
+    override suspend fun connect(server: Server, profile: Profile?, settings: AppSettings, stored: Map<String, String>): Unit = withContext(Dispatchers.IO) {
         stopLocal()
         mutableState.value = VpnState.Connecting
         try {
@@ -85,7 +85,7 @@ object AndroidMihomo : MihomoCore {
                 appPort = appPort0,
                 proxy = if (settings.localProxy) XrayConfigBuilder.localProxy(settings) else null,
             )
-            val plan = MihomoConfigBuilder.build(server, profile, settings, ingress)
+            val plan = MihomoConfigBuilder.build(server, profile, settings, ingress, stored = stored)
             val dir = profileDir(app).apply { mkdirs() }
             // The bridge moves provider files under <profile>/providers/.
             plan.links?.let { File(dir, "providers").apply { mkdirs() }.resolve(MihomoConfigBuilder.LINKS_FILE).writeText(it) }

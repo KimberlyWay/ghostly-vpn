@@ -105,4 +105,33 @@ class MihomoTest {
         assertEquals(listOf(MihomoConfigBuilder.MAIN_GROUP, MihomoConfigBuilder.AUTO_GROUP, MihomoConfigBuilder.FALLBACK_GROUP), groups)
         assertEquals(0, plan.picks.single().providerIndex)
     }
+
+    @Test
+    fun storedSelectorChoicesWinOverSelectedServer() {
+        val parsed = SubscriptionParser.parse(yaml, emptyMap(), "p1")
+        val profile = Profile(id = "p1", name = "t", servers = parsed.servers, mihomo = parsed.mihomo)
+        // The user set Proxy → Auto by hand; connecting to the NL server must not undo it.
+        val plan = MihomoConfigBuilder.build(
+            parsed.servers[1], profile, AppSettings(), MihomoIngress(9999, "x"),
+            stored = mapOf("Proxy" to "Auto", "Bogus" to "Nope", "Europe" to "Not a member"),
+        )
+        assertEquals(listOf("Europe" to "🇳🇱 NL", "Proxy" to "Auto"), plan.picks.map { it.group to it.choice })
+    }
+
+    @Test
+    fun storedLinkChoicePicksThatServer() {
+        val a = app.ghostly.core.link.LinkParser.parse("trojan://pass@a.example.com:443?sni=a.example.com#Alpha", "m:0")!!
+        val b = app.ghostly.core.link.LinkParser.parse("trojan://pass@b.example.com:443?sni=b.example.com#Beta", "m:1")!!
+        val profile = Profile(id = "p1", name = "t", servers = listOf(a, b))
+        val settings = AppSettings(core = CoreType.MIHOMO)
+        // Selected server is Alpha, but the saved «Ghostly» choice is Beta → Beta wins.
+        val byName = MihomoConfigBuilder.build(a, profile, settings, MihomoIngress(9999, "x"), stored = mapOf(MihomoConfigBuilder.MAIN_GROUP to "Beta"))
+        assertEquals(1, byName.picks.single().providerIndex)
+        // A saved automatic group is applied by name.
+        val auto = MihomoConfigBuilder.build(a, profile, settings, MihomoIngress(9999, "x"), stored = mapOf(MihomoConfigBuilder.MAIN_GROUP to MihomoConfigBuilder.AUTO_GROUP))
+        assertEquals(MihomoConfigBuilder.AUTO_GROUP, auto.picks.single().choice)
+        // A stale saved name falls back to the selected server.
+        val stale = MihomoConfigBuilder.build(a, profile, settings, MihomoIngress(9999, "x"), stored = mapOf(MihomoConfigBuilder.MAIN_GROUP to "Gone"))
+        assertEquals(0, stale.picks.single().providerIndex)
+    }
 }

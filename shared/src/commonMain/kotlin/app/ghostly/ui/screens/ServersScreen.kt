@@ -130,12 +130,17 @@ private fun ServersList(
     val refreshing by controller.refreshing.collectAsState()
     val selected by controller.selectedServerId.collectAsState()
     val favorites by controller.favorites.collectAsState()
-    val mihomoGroups by controller.mihomoGroups.groups.collectAsState()
+    val liveGroups by controller.mihomoGroups.groups.collectAsState()
+    val staticGroups by controller.staticMihomoGroups.collectAsState()
+    // Selectors are there before the first connect: drawn from the profile until the core reports live ones.
+    val mihomoGroups = liveGroups.ifEmpty { staticGroups }
     val groupsTesting by controller.mihomoGroups.testing.collectAsState()
     var openGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
     val listPad = LocalListPad.current
 
     var query by rememberSaveable { mutableStateOf("") }
+    // One list, not two: rows already offered inside the mihomo groups don't repeat below (search still finds them).
+    val groupMembers = if (query.isBlank()) mihomoGroups.flatMap { it.members }.toSet() else emptySet()
     var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     // Rows animate in once; after that (scrolling back, recycling) they just appear.
@@ -190,11 +195,11 @@ private fun ServersList(
         if (query.isBlank()) proxyGroups(
             mihomoGroups, openGroups, groupsTesting, listPad,
             onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
-            onSelect = { g, m -> controller.haptic(); controller.mihomoGroups.select(g, m) },
+            onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
             onTest = { g -> controller.haptic(); controller.mihomoGroups.test(g) },
         )
 
-        val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) }
+        val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) && it.name !in groupMembers }
         if (favs.isNotEmpty()) {
             item { GroupLabel("Избранное", Icons.Rounded.Star) }
             items(sorted(favs), key = { "fav:" + it.id }) { s ->
@@ -203,7 +208,7 @@ private fun ServersList(
         }
 
         profiles.forEach { profile ->
-            val list = sorted(profile.servers.filter(::matches))
+            val list = sorted(profile.servers.filter { matches(it) && it.name !in groupMembers })
             item(key = "profile:" + profile.id) {
                 ProfileHeader(profile, profile.id in collapsed, profile.id in refreshing, controller) {
                     collapsed = if (profile.id in collapsed) collapsed - profile.id else collapsed + profile.id
