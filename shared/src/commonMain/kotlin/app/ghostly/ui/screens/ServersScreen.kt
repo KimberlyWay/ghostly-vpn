@@ -134,7 +134,9 @@ private fun ServersList(
     val staticGroups by controller.staticMihomoGroups.collectAsState()
     // Selectors are there before the first connect: drawn from the profile until the core reports live ones.
     val mihomoGroups = liveGroups.ifEmpty { staticGroups }
-    val groupsTesting by controller.mihomoGroups.testing.collectAsState()
+    val liveTesting by controller.mihomoGroups.testing.collectAsState()
+    val staticTesting by controller.groupsPinging.collectAsState()
+    val groupsTesting = liveTesting + staticTesting
     var openGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
     val listPad = LocalListPad.current
 
@@ -196,7 +198,7 @@ private fun ServersList(
             mihomoGroups, openGroups, groupsTesting, listPad,
             onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
             onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
-            onTest = { g -> controller.haptic(); controller.mihomoGroups.test(g) },
+            onTest = { g -> controller.haptic(); controller.testGroup(g) },
         )
 
         val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) && it.name !in groupMembers }

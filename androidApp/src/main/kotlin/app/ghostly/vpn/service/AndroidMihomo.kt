@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import java.io.File
@@ -92,8 +94,7 @@ object AndroidMihomo : MihomoCore {
         mutableState.value = VpnState.Connecting
         try {
             val controller = freePort()
-            val rnd = java.security.SecureRandom()
-            val secret = (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789"[rnd.nextInt(32)] }.joinToString("")
+            val secret = randomSecret()
             val appPort0 = freePort()
             val ingress = MihomoIngress(
                 controllerPort = controller,
@@ -210,10 +211,71 @@ object AndroidMihomo : MihomoCore {
 
     override suspend fun ping(server: Server, url: String): Long = -1
 
-    /** Clash-profile proxies can only be measured by a running core: through its controller when up. */
-    override suspend fun pingProfile(servers: List<Server>, profile: Profile, url: String, onResult: (String, Long) -> Unit) {
-        val client = api
-        servers.forEach { s -> onResult(s.id, client?.delay(s.name, url) ?: -1L) }
+    private val pingLock = kotlinx.coroutines.sync.Mutex()
+
+    /** A ping-only config (proxies + MATCH,DIRECT) loads here, apart from the tunnel's profile. */
+    fun pingDir(context: Context) = File(homeDir(context), "ping")
+
+    /**
+     * Clash-profile proxies can only be measured by a core. With the tunnel up that is the running one;
+     * without it the `:mihomo` process loads a ping-only config (no TUN, no VPN) for the duration, the
+     * same way desktop runs a throwaway mihomo — so pings work before connecting, not only after.
+     */
+    override suspend fun pingProfile(servers: List<Server>, profile: Profile, url: String, onResult: (String, Long) -> Unit): Unit = withContext(Dispatchers.IO) {
+        api?.let { client ->
+            measure(client, servers, url, onResult)
+            return@withContext
+        }
+        val proxies = servers.mapNotNull { it.mihomo }
+        if (proxies.isEmpty()) {
+            servers.forEach { onResult(it.id, -1) }
+            return@withContext
+        }
+        pingLock.withLock {
+            val controller = freePort()
+            val secret = randomSecret()
+            val dir = pingDir(app).apply { mkdirs() }
+            val cfg = kotlinx.serialization.json.buildJsonObject {
+                put("log-level", kotlinx.serialization.json.JsonPrimitive("silent"))
+                put("proxies", kotlinx.serialization.json.JsonArray(proxies))
+                put("rules", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("MATCH,DIRECT"))))
+            }
+            File(dir, "config.yaml").writeText(JsonX.encodeToString(JsonObject.serializer(), cfg))
+            // A plain start (not foreground, no VPN): only ever asked while the app is on screen.
+            val started = runCatching {
+                app.startService(
+                    Intent(app, MihomoVpnService::class.java).setAction(MihomoVpnService.ACTION_PING)
+                        .putExtra(MihomoVpnService.EXTRA_CONTROLLER, controller)
+                        .putExtra(MihomoVpnService.EXTRA_SECRET, secret),
+                )
+            }.isSuccess
+            val client = MihomoApi(controller, secret)
+            try {
+                var ready = false
+                val deadline = System.currentTimeMillis() + 10_000
+                while (started && System.currentTimeMillis() < deadline) {
+                    if (client.ready()) { ready = true; break }
+                    delay(100)
+                }
+                if (ready) measure(client, servers, url, onResult, timeoutMs = 6000)
+                else servers.forEach { onResult(it.id, -1) }
+            } finally {
+                client.close()
+                runCatching { app.startService(Intent(app, MihomoVpnService::class.java).setAction(MihomoVpnService.ACTION_PING_DONE)) }
+            }
+        }
+    }
+
+    private suspend fun measure(client: MihomoApi, servers: List<Server>, url: String, onResult: (String, Long) -> Unit, timeoutMs: Int = 5000) {
+        val gate = kotlinx.coroutines.sync.Semaphore(12)
+        kotlinx.coroutines.coroutineScope {
+            servers.forEach { s -> launch { gate.withPermit { onResult(s.id, client.delay(s.name, url, timeoutMs)) } } }
+        }
+    }
+
+    private fun randomSecret(): String {
+        val rnd = java.security.SecureRandom()
+        return (1..24).map { "abcdefghijkmnpqrstuvwxyz23456789"[rnd.nextInt(32)] }.joinToString("")
     }
 
     override fun coreVersion(): String = version?.let { "mihomo $it" } ?: "mihomo (Prizrak-Core)"

@@ -548,22 +548,53 @@ class GhostlyController(
         pingServers(servers)
     }
 
-    fun ping(serverId: String) = server(serverId)?.let { pingServers(listOf(it)) }
+    fun ping(serverId: String) {
+        server(serverId)?.let { pingServers(listOf(it)) }
+    }
+
+    private val _groupsPinging = MutableStateFlow<Set<String>>(emptySet())
+    /** Selector groups being tested before the core runs (the live core reports its own, see [MihomoGroups.testing]). */
+    val groupsPinging: StateFlow<Set<String>> = _groupsPinging.asStateFlow()
+
+    /**
+     * The ping button of a selector group. With the core running it asks the core to test the group;
+     * without it the group's servers (through nested groups too) are pinged like any other server —
+     * on Android that briefly loads a ping-only core, so the delays are real ones, not handshakes.
+     */
+    fun testGroup(group: String) {
+        if (mihomoGroups.groups.value.isNotEmpty()) {
+            mihomoGroups.test(group)
+            return
+        }
+        if (group in _groupsPinging.value) return
+        val profile = groupOwner(group) ?: return
+        val defs = profile.mihomo?.let { app.ghostly.core.mihomo.MihomoProfiles.groups(it) }.orEmpty()
+        val listed = staticMihomoGroups.value.associate { it.name to it.members }
+        val names = HashSet<String>()
+        val seen = HashSet<String>()
+        fun walk(g: String) {
+            if (!seen.add(g)) return
+            (defs[g]?.members ?: listed[g]).orEmpty().forEach { m -> if (m in defs || m in listed) walk(m) else names += m }
+        }
+        walk(group)
+        val job = pingServers(profile.servers.filter { it.name in names }) ?: return
+        _groupsPinging.update { it + group }
+        job.invokeOnCompletion { _groupsPinging.update { it - group } }
+    }
 
     /**
      * Two phases: an instant TCP handshake to every server (results in ~100 ms, marked quick),
      * then the real round-trip through the core, batched by the backend.
      */
-    private fun pingServers(servers: List<Server>) {
+    private fun pingServers(servers: List<Server>): kotlinx.coroutines.Job? {
         val targets = servers.filter { !it.isAuto && it.id !in _pinging.value }
-        if (targets.isEmpty()) return
+        if (targets.isEmpty()) return null
         _pinging.update { it + targets.map { s -> s.id } }
         val method = _settings.value.pingMethod
         if (method == app.ghostly.core.model.PingMethod.TCP || method == app.ghostly.core.model.PingMethod.ICMP) {
-            scope.launch(Dispatchers.IO) { pingDirect(targets, method) }
-            return
+            return scope.launch(Dispatchers.IO) { pingDirect(targets, method) }
         }
-        scope.launch(Dispatchers.IO) {
+        return scope.launch(Dispatchers.IO) {
             val gate = Semaphore(24)
             targets.filter { it.protocol != "hysteria" && it.host != null && it.port > 0 }.map { s ->
                 async {
