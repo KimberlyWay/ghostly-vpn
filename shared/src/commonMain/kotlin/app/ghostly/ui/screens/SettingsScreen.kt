@@ -126,19 +126,14 @@ fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues)
         }
     }
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+    // Where back leads, fully drawn beneath; the page on top turns into an opaque card that shrinks and slides off.
     if (peek > 0f && page != Page.MAIN) {
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().graphicsLayer {
-            val k = 0.94f + 0.06f * peek
-            scaleX = k; scaleY = k; alpha = 0.35f + 0.65f * peek
-        }) { MainSettings(controller, contentPadding) {} }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f + 0.45f * peek }) {
+            MainSettings(controller, contentPadding) {}
+        }
     }
     AnimatedContent(
-        modifier = Modifier.fillMaxSize().graphicsLayer {
-            translationX = size.width * 0.28f * peek
-            val k = 1f - 0.08f * peek
-            scaleX = k; scaleY = k
-            alpha = 1f - 0.35f * peek
-        },
+        modifier = Modifier.fillMaxSize().predictiveCard(peek),
         targetState = page,
         transitionSpec = {
             val forward = targetState != Page.MAIN
@@ -718,3 +713,20 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         }
     }
 }
+
+
+/**
+ * The screen under the finger during a predictive back gesture: shrinks, slides right, gets rounded
+ * corners, a shadow and an opaque background (screens are transparent over the aurora, so without it
+ * the destination beneath couldn't be seen).
+ */
+internal fun Modifier.predictiveCard(p: Float): Modifier = if (p <= 0f) this else this
+    .graphicsLayer {
+        val k = 1f - 0.14f * p
+        scaleX = k; scaleY = k
+        translationX = size.width * 0.22f * p
+        shadowElevation = 24.dp.toPx() * p
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(32.dp * p)
+        clip = true
+    }
+    .background(app.ghostly.ui.theme.Ghost.colors.bgRaised)

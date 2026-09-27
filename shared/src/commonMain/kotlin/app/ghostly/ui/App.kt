@@ -1,6 +1,7 @@
 package app.ghostly.ui
 
 import androidx.compose.animation.AnimatedContent
+import app.ghostly.ui.screens.predictiveCard
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -161,14 +162,18 @@ fun GhostlyApp(controller: GhostlyController) {
                     wide -> DesktopShell(controller, tab, { tab = it }, onAdd = { addOpen = true })
                     else -> {
                         val pad = PaddingValues(top = insets.calculateTopPadding() + 8.dp, bottom = insets.calculateBottomPadding() + 96.dp)
+                        // Predictive back to Главная: it is drawn beneath while the current tab slides off as a card.
+                        if (tabPeek > 0f && tab != Tab.HOME) {
+                            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f + 0.45f * tabPeek }, contentAlignment = Alignment.TopCenter) {
+                                Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
+                                    HomeScreen(controller, onPickServer = {}, contentPadding = pad)
+                                }
+                            }
+                        }
                         AnimatedContent(
                             targetState = tab,
                             transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
-                            modifier = Modifier.fillMaxSize().graphicsLayer {
-                                val k = 1f - 0.07f * tabPeek
-                                scaleX = k; scaleY = k
-                                alpha = 1f - 0.3f * tabPeek
-                            },
+                            modifier = Modifier.fillMaxSize().predictiveCard(tabPeek),
                         ) { t ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
