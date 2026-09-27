@@ -93,7 +93,7 @@ const val SITE_URL = "https://ghostlinknex.online"
 
 internal enum class Tab(val title: String) { HOME("Главная"), SERVERS("Серверы"), SETTINGS("Настройки") }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun GhostlyApp(controller: GhostlyController) {
     val settings by controller.settings.collectAsState()
@@ -109,6 +109,10 @@ fun GhostlyApp(controller: GhostlyController) {
         var pickerOpen by remember { mutableStateOf(false) }
         var toast by remember { mutableStateOf<String?>(null) }
         var wideLayout by remember { mutableStateOf(false) }
+
+        // Android back gesture: any tab goes back to Home first; only Home leaves the app.
+        // Registered before the screens, so a screen's own handler (settings sub-pages) wins.
+        androidx.compose.ui.backhandler.BackHandler(enabled = onboarded && !wideLayout && tab != Tab.HOME) { tab = Tab.HOME }
 
         LaunchedEffect(Unit) {
             controller.events.collect { msg ->

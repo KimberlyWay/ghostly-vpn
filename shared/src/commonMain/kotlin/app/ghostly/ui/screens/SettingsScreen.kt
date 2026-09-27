@@ -108,8 +108,11 @@ private enum class Page { MAIN, ROUTING, DNS, APPS, PROXY, ADVANCED, ABOUT }
 const val GITHUB_URL = "https://github.com/Nelxi/ghostly-vpn"
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues) {
     var page by rememberSaveable { mutableStateOf(Page.MAIN) }
+    // The system back gesture climbs out of a sub-page instead of leaving the app.
+    androidx.compose.ui.backhandler.BackHandler(enabled = page != Page.MAIN) { page = Page.MAIN }
     AnimatedContent(
         targetState = page,
         transitionSpec = {
