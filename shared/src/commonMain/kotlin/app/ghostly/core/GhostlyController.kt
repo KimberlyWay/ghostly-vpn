@@ -228,7 +228,7 @@ class GhostlyController(
     fun import(raw: String, onDone: (Boolean) -> Unit = {}) {
         scope.launch(Dispatchers.IO) {
             val ok = runCatching { importInternal(raw.trim()) }
-                .onFailure { _events.emit("Не получилось добавить: ${it.message ?: it::class.simpleName}") }
+                .onFailure { _events.emit("Не получилось добавить: ${app.ghostly.core.sub.FetchErrors.describe(it)}") }
                 .getOrDefault(false)
             onDone(ok)
         }
@@ -270,7 +270,7 @@ class GhostlyController(
                 saveProfiles()
                 if (server(_selected.value) == null) select(profile.servers.first().id)
                 markOnboarded()
-                _events.emit("Подписка «${profile.name}» добавлена · ${profile.servers.size} серверов")
+                _events.emit("Подписка «${profile.name}» добавлена · ${serverCount(profile.servers.size)}")
                 pingAll(profile.id)
                 return true
             } finally {
@@ -289,7 +289,7 @@ class GhostlyController(
             saveProfiles()
             if (server(_selected.value) == null) select(parsed.servers.first().id)
             markOnboarded()
-            _events.emit("Профиль mihomo добавлен · ${parsed.servers.size} серверов")
+            _events.emit("Профиль mihomo добавлен · ${serverCount(parsed.servers.size)}")
             return true
         }
 
@@ -349,7 +349,8 @@ class GhostlyController(
 
     // ------------------------------------------------------------------ profiles
 
-    fun refresh(profileId: String) {
+    /** [manual]: the user pressed "Обновить" and waits for an answer, so success is reported too. */
+    fun refresh(profileId: String, manual: Boolean = false) {
         val profile = _profiles.value.firstOrNull { it.id == profileId } ?: return
         val url = profile.url ?: return
         if (profileId in _refreshing.value) return
@@ -381,12 +382,25 @@ class GhostlyController(
                 }
                 // Selection is id-based (profile id + index), so it survives; fall back if the server vanished.
                 if (server(_selected.value) == null) parsed.servers.firstOrNull()?.let { select(it.id) }
+                if (manual) _events.emit("Подписка «${parsed.title ?: profile.name}» обновлена · ${serverCount(parsed.servers.size)}")
             } catch (e: Exception) {
-                _events.emit("«${profile.name}»: ${e.message ?: "ошибка обновления"}")
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                _events.emit("Не удалось обновить «${profile.name}»: ${app.ghostly.core.sub.FetchErrors.describe(e)}")
             } finally {
                 _refreshing.update { it - profileId }
             }
         }
+    }
+
+    private fun serverCount(n: Int): String {
+        val m10 = n % 10
+        val m100 = n % 100
+        val word = when {
+            m10 == 1 && m100 != 11 -> "сервер"
+            m10 in 2..4 && m100 !in 12..14 -> "сервера"
+            else -> "серверов"
+        }
+        return "$n $word"
     }
 
     /** Profiles already reported as "Xray format only" on mihomo (once per run, not on every auto-refresh). */
@@ -645,7 +659,7 @@ class GhostlyController(
      * then the real round-trip through the core, batched by the backend.
      */
     private fun pingServers(servers: List<Server>): kotlinx.coroutines.Job? {
-        val targets = servers.filter { !it.isAuto && it.id !in _pinging.value }
+        val targets = servers.filter { it.canPing && it.id !in _pinging.value }
         if (targets.isEmpty()) return null
         _pinging.update { it + targets.map { s -> s.id } }
         val method = _settings.value.pingMethod

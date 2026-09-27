@@ -212,7 +212,7 @@ fun SubscriptionPage(controller: GhostlyController, profileId: String, onAdd: ()
         Spacer(Modifier.height(14.dp))
         val busy = profile.id in refreshing
         val actions = buildList<Triple<ImageVector, String, () -> Unit>> {
-            if (profile.url != null) add(Triple(Icons.Rounded.Refresh, if (busy) "Обновляю…" else "Обновить") { controller.haptic(); controller.refresh(profile.id) })
+            if (profile.url != null) add(Triple(Icons.Rounded.Refresh, if (busy) "Обновляю…" else "Обновить") { controller.haptic(); controller.refresh(profile.id, manual = true) })
             profile.webPageUrl?.let { url -> add(Triple(Icons.Rounded.Public, "Подписка") { controller.platform.openUrl(url) }) }
             profile.renewLink()?.let { url -> add(Triple(Icons.Rounded.Payments, "Продлить") { controller.platform.openUrl(url) }) }
             // Without its own renew link "Продлить" already opens the support link: no second button for it.

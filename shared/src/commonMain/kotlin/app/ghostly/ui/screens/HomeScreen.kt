@@ -282,7 +282,7 @@ private fun ReadyCard(m: HomeModel, controller: GhostlyController) {
                     )
                 }
             }
-            if (server != null && !server.isAuto) {
+            if (server != null && server.canPing) {
                 Spacer(Modifier.width(10.dp))
                 PingPill(m.ping, m.pinging)
             }
@@ -456,7 +456,7 @@ fun ServerCard(m: HomeModel, onClick: () -> Unit, modifier: Modifier = Modifier)
                     }
                 }
             }
-            if (server != null && !server.isAuto) PingPill(m.ping, m.pinging)
+            if (server != null && server.canPing) PingPill(m.ping, m.pinging)
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = c.ink3)
         }
     }
@@ -579,7 +579,7 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
         // The provider's note lives on the subscription page (a tap on this card).
 
         val actions = buildList<Triple<ImageVector, String, () -> Unit>> {
-            if (profile.url != null) add(Triple(Icons.Rounded.Refresh, "Обновить") { controller.haptic(); controller.refresh(profile.id) })
+            if (profile.url != null) add(Triple(Icons.Rounded.Refresh, "Обновить") { controller.haptic(); controller.refresh(profile.id, manual = true) })
             // Support is the button at the top of the screen; here: the provider's page and renewing.
             profile.webPageUrl?.let { url -> add(Triple(Icons.Rounded.Public, "Подписка") { controller.platform.openUrl(url) }) }
             profile.renewLink()?.let { url -> add(Triple(Icons.Rounded.Payments, "Продлить") { controller.platform.openUrl(url) }) }
