@@ -103,10 +103,10 @@ class GhostlyController(
     fun copyMihomoLogs() {
         scope.launch(Dispatchers.IO) {
             val logs = (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.mihomo?.coreLogs()
-            if (logs == null) _events.emit("Журнал пуст — сначала попробуй подключиться с ядром mihomo")
+            if (logs == null) _events.emit("Журнал пуст — сначала попробуй подключиться с ядром Mihomo")
             else {
                 platform.copyToClipboard(logs)
-                _events.emit("Журнал mihomo скопирован — вставь его в чат поддержки")
+                _events.emit("Журнал Mihomo скопирован — вставь его в чат поддержки")
             }
         }
     }
@@ -285,11 +285,11 @@ class GhostlyController(
                 _events.emit("В профиле нет серверов")
                 return false
             }
-            _profiles.update { it + Profile(id = id, name = parsed.title ?: "Профиль mihomo", servers = parsed.servers, mihomo = parsed.mihomo, updatedAt = now()) }
+            _profiles.update { it + Profile(id = id, name = parsed.title ?: "Профиль Mihomo", servers = parsed.servers, mihomo = parsed.mihomo, updatedAt = now()) }
             saveProfiles()
             if (server(_selected.value) == null) select(parsed.servers.first().id)
             markOnboarded()
-            _events.emit("Профиль mihomo добавлен · ${serverCount(parsed.servers.size)}")
+            _events.emit("Профиль Mihomo добавлен · ${serverCount(parsed.servers.size)}")
             return true
         }
 
@@ -378,7 +378,7 @@ class GhostlyController(
                 }
                 saveProfiles()
                 if (_settings.value.core == app.ghostly.core.model.CoreType.MIHOMO && parsed.mihomo == null && parsed.servers.all { it.config != null } && warnedXrayOnly.add(profileId)) {
-                    _events.emit("«${profile.name}»: провайдер отдаёт только формат Xray — на ядре mihomo эта подписка не показывается")
+                    _events.emit("«${profile.name}»: провайдер отдаёт только формат Xray — на ядре Mihomo эта подписка не показывается")
                 }
                 // Selection is id-based (profile id + index), so it survives; fall back if the server vanished.
                 if (server(_selected.value) == null) parsed.servers.firstOrNull()?.let { select(it.id) }
