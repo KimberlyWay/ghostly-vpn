@@ -257,6 +257,8 @@ class GhostlyController(
                     supportUrl = parsed.supportUrl,
                     webPageUrl = parsed.webPageUrl,
                     announce = parsed.announce,
+                    renewUrl = parsed.renewUrl,
+                    notice = parsed.notice,
                     updateIntervalHours = parsed.updateIntervalHours ?: 12,
                     updatedAt = now(),
                     servers = parsed.servers,
@@ -362,6 +364,8 @@ class GhostlyController(
                             webPageUrl = parsed.webPageUrl ?: it.webPageUrl,
                             // The note follows the provider: gone from the headers means gone here too.
                             announce = parsed.announce,
+                            renewUrl = parsed.renewUrl,
+                            notice = parsed.notice,
                             updateIntervalHours = parsed.updateIntervalHours ?: it.updateIntervalHours,
                             updatedAt = now(),
                             servers = parsed.servers,

@@ -21,6 +21,10 @@ data class ParsedSubscription(
     val webPageUrl: String?,
     /** `announce`: the provider's note for the user (plain or `base64:`). */
     val announce: String? = null,
+    /** `sub-expire-button-link`: where renewing the subscription happens. */
+    val renewUrl: String? = null,
+    /** `sub-info-*`: the provider's info block. */
+    val notice: app.ghostly.core.model.ProviderNotice? = null,
     val updateIntervalHours: Int?,
     val servers: List<Server>,
     /** Clash/mihomo config when the body was YAML (see [app.ghostly.core.model.Profile.mihomo]). */
@@ -77,6 +81,15 @@ object SubscriptionParser {
             supportUrl = h["support-url"],
             webPageUrl = h["profile-web-page-url"],
             announce = h["announce"]?.let(::decodeTitle)?.trim()?.takeIf { it.isNotEmpty() }?.take(1000),
+            renewUrl = h["sub-expire-button-link"]?.trim()?.takeIf { it.isNotEmpty() },
+            notice = h["sub-info-text"]?.let(::decodeTitle)?.trim()?.takeIf { it.isNotEmpty() }?.let { text ->
+                app.ghostly.core.model.ProviderNotice(
+                    text = text.take(1000),
+                    color = h["sub-info-color"]?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+                    buttonText = h["sub-info-button-text"]?.let(::decodeTitle)?.trim()?.takeIf { it.isNotEmpty() },
+                    buttonUrl = h["sub-info-button-link"]?.trim()?.takeIf { it.isNotEmpty() },
+                )
+            },
             updateIntervalHours = h["profile-update-interval"]?.trim()?.toIntOrNull(),
             servers = dedupeIds(servers),
             mihomo = mihomo,

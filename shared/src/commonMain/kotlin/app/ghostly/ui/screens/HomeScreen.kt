@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.NetworkPing
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
@@ -579,8 +580,9 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
 
         val actions = buildList<Triple<ImageVector, String, () -> Unit>> {
             if (profile.url != null) add(Triple(Icons.Rounded.Refresh, "Обновить") { controller.haptic(); controller.refresh(profile.id) })
-            profile.webPageUrl?.let { url -> add(Triple(Icons.Rounded.Public, "Кабинет") { controller.platform.openUrl(url) }) }
-            profile.supportUrl?.let { url -> add(Triple(Icons.Rounded.SupportAgent, "Поддержка") { controller.platform.openUrl(url) }) }
+            // Support is the button at the top of the screen; here: the provider's page and renewing.
+            profile.webPageUrl?.let { url -> add(Triple(Icons.Rounded.Public, "Подписка") { controller.platform.openUrl(url) }) }
+            profile.renewLink()?.let { url -> add(Triple(Icons.Rounded.Payments, "Продлить") { controller.platform.openUrl(url) }) }
         }
         if (actions.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))

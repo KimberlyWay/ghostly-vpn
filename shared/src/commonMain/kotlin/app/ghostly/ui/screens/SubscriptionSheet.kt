@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SupportAgent
@@ -60,6 +61,12 @@ import kotlinx.coroutines.delay
 class SubscriptionNav(val open: (profileId: String) -> Unit, val add: () -> Unit)
 
 val LocalSubscriptionNav = staticCompositionLocalOf { SubscriptionNav({}, {}) }
+
+/**
+ * Where "Продлить" leads: the provider's renew link (`sub-expire-button-link`), else its support
+ * link, which for most providers is the bot that sells the subscription.
+ */
+fun Profile.renewLink(): String? = renewUrl ?: supportUrl
 
 /** Profiles that count as subscriptions (a URL or provider info), in list order. */
 fun List<Profile>.subscriptions() = filter { it.url != null || it.info != null }
@@ -168,6 +175,26 @@ fun SubscriptionPage(controller: GhostlyController, profileId: String, onAdd: ()
             }
         }
 
+        // The provider's info block (Happ `sub-info-*`), coloured as asked, with its button.
+        profile.notice?.let { n ->
+            val tone = when (n.color) { "red" -> c.bad; "green" -> c.ok; "blue" -> Color(0xFF6EA8FF); else -> c.accent }
+            Spacer(Modifier.height(12.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(tone.copy(alpha = 0.10f))
+                    .border(1.dp, tone.copy(alpha = 0.28f), RoundedCornerShape(18.dp)).padding(14.dp),
+            ) {
+                FlagText(n.text, style = MaterialTheme.typography.bodyMedium)
+                n.buttonUrl?.let { url ->
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        n.buttonText ?: "Открыть", style = MaterialTheme.typography.labelLarge, color = tone,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(tone.copy(alpha = 0.14f))
+                            .clickable { controller.platform.openUrl(url) }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+
         // Facts from the headers (links are the buttons below, not repeated here)
         val traffic = info != null && info.pools.isEmpty() && info.used > 0
         if (traffic || profile.url != null) {
@@ -186,8 +213,10 @@ fun SubscriptionPage(controller: GhostlyController, profileId: String, onAdd: ()
         val busy = profile.id in refreshing
         val actions = buildList<Triple<ImageVector, String, () -> Unit>> {
             if (profile.url != null) add(Triple(Icons.Rounded.Refresh, if (busy) "Обновляю…" else "Обновить") { controller.haptic(); controller.refresh(profile.id) })
-            profile.webPageUrl?.let { url -> add(Triple(Icons.Rounded.Public, "Кабинет") { controller.platform.openUrl(url) }) }
-            profile.supportUrl?.let { url -> add(Triple(Icons.Rounded.SupportAgent, "Поддержка") { controller.platform.openUrl(url) }) }
+            profile.webPageUrl?.let { url -> add(Triple(Icons.Rounded.Public, "Подписка") { controller.platform.openUrl(url) }) }
+            profile.renewLink()?.let { url -> add(Triple(Icons.Rounded.Payments, "Продлить") { controller.platform.openUrl(url) }) }
+            // Without its own renew link "Продлить" already opens the support link: no second button for it.
+            profile.supportUrl?.takeIf { profile.renewUrl != null }?.let { url -> add(Triple(Icons.Rounded.SupportAgent, "Поддержка") { controller.platform.openUrl(url) }) }
             profile.url?.let { url -> add(Triple(Icons.Rounded.ContentCopy, "Ссылка") { controller.platform.copyToClipboard(url) }) }
         }
         actions.chunked(2).forEach { row ->

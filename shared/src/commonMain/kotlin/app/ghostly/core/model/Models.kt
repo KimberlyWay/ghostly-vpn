@@ -15,6 +15,10 @@ data class Profile(
     val webPageUrl: String? = null,
     /** Provider's note for the user (Remnawave/Happ `announce` header): shown with the subscription. */
     val announce: String? = null,
+    /** Where "Продлить" leads: Happ's `sub-expire-button-link` (a bot, a payment page). */
+    val renewUrl: String? = null,
+    /** Happ's info block (`sub-info-text`, `-color`, `-button-text`, `-button-link`). */
+    val notice: ProviderNotice? = null,
     /** Update interval the provider asked for (`profile-update-interval`), hours. */
     val updateIntervalHours: Int = 12,
     val updatedAt: Long = 0,
@@ -22,6 +26,10 @@ data class Profile(
     /** Whole Clash/mihomo config (YAML subscription, kept as JSON): runs on mihomo with its groups and rules. */
     val mihomo: JsonObject? = null,
 )
+
+/** The provider's info block with an optional button (Happ `sub-info-*` headers). */
+@Serializable
+data class ProviderNotice(val text: String, val color: String? = null, val buttonText: String? = null, val buttonUrl: String? = null)
 
 /** `subscription-userinfo` header: bytes and a unix-seconds expiry (0 = unlimited). */
 @Serializable

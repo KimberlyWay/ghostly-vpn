@@ -87,6 +87,22 @@ class ParserTest {
     }
 
     @Test
+    fun happRenewAndInfoHeaders() {
+        val parsed = SubscriptionParser.parse(reality, mapOf(
+            "sub-expire-button-link" to "https://t.me/wisp_bot",
+            "sub-info-text" to "Скидка 20%",
+            "sub-info-color" to "Green",
+            "sub-info-button-text" to "Купить",
+            "sub-info-button-link" to "https://example.com/pay",
+        ), "p")
+        assertEquals("https://t.me/wisp_bot", parsed.renewUrl)
+        assertEquals(app.ghostly.core.model.ProviderNotice("Скидка 20%", "green", "Купить", "https://example.com/pay"), parsed.notice)
+        val none = SubscriptionParser.parse(reality, mapOf("sub-info-color" to "red"), "p")
+        assertEquals(null, none.notice)
+        assertEquals(null, none.renewUrl)
+    }
+
+    @Test
     fun xrayJsonSubscriptionKeepsProviderRouting() {
         val cfg = """
             [{"remarks":"Auto","outbounds":[{"tag":"a","protocol":"vless","settings":{"vnext":[{"address":"h","port":1,"users":[{"id":"x"}]}]}},
