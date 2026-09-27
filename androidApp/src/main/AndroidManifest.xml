@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Stage: Visualizer on the output mix (Android calls it "microphone"; nothing is recorded). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Self-update: the new APK (verified by SHA-256) is handed to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -70,6 +73,16 @@
             android:theme="@style/Theme.Ghostly"
             tools:ignore="DiscouragedApi,LockedOrientationActivity" />
 
+        <!-- Stage: lets Ghostly see which track plays in other apps (media sessions); notifications aren't read. -->
+        <service
+            android:name=".stage.GhostlyMediaListener"
+            android:exported="false"
+            android:label="Ghostly — сцена"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <service
             android:name=".service.GhostlyVpnService"
             android:exported="false"
