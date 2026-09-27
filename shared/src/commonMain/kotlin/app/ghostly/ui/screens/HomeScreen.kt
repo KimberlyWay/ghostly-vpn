@@ -38,7 +38,6 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.NetworkPing
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Public
@@ -576,21 +575,7 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
             }
         }
 
-        // The provider's note (Remnawave `announce`): the first lines here, all of it on the subscription page.
-        profile.announce?.let { note ->
-            Spacer(Modifier.height(12.dp))
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.accent.copy(alpha = 0.08f))
-                    .clickable { nav.open(profile.id) }.padding(10.dp),
-            ) {
-                Icon(Icons.Rounded.Campaign, null, tint = c.accent, modifier = Modifier.size(16.dp).padding(top = 1.dp))
-                Spacer(Modifier.width(8.dp))
-                app.ghostly.ui.components.FlagText(
-                    note, style = MaterialTheme.typography.bodySmall, color = c.ink2,
-                    maxLines = 3, overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        // The provider's note lives on the subscription page (a tap on this card).
 
         val actions = buildList<Triple<ImageVector, String, () -> Unit>> {
             if (profile.url != null) add(Triple(Icons.Rounded.Refresh, "Обновить") { controller.haptic(); controller.refresh(profile.id) })
