@@ -181,7 +181,7 @@ class MihomoVpnService : VpnService() {
 
     private var pinging = false
 
-    private suspend fun pingCore(intent: Intent) = lock.withLock {
+    private suspend fun pingCore(intent: Intent): Unit = lock.withLock {
         if (running) return@withLock
         try {
             Clash.patchOverride(
@@ -196,9 +196,10 @@ class MihomoVpnService : VpnService() {
         } catch (e: Throwable) {
             Log.w(TAG, "ping core failed", e)
         }
+        Unit
     }
 
-    private suspend fun pingDone() = lock.withLock {
+    private suspend fun pingDone(): Unit = lock.withLock {
         if (running || !pinging) return@withLock
         pinging = false
         runCatching { Clash.reset() }
@@ -208,6 +209,7 @@ class MihomoVpnService : VpnService() {
             delay(300)
             if (!running) android.os.Process.killProcess(android.os.Process.myPid())
         }
+        Unit
     }
 
     private suspend fun stop() = lock.withLock {

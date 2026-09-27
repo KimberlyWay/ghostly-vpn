@@ -217,6 +217,7 @@ fun GhostlyApp(controller: GhostlyController) {
 // ---------------------------------------------------------------------------- picker sheet
 
 /** Bottom sheet over the whole app: scrim, a tall panel sliding up, back gesture and a drag-down handle close it. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun BoxScope.PickerSheet(
     open: Boolean,
