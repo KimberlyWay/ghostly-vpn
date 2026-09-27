@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.SupportAgent
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -280,6 +281,8 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
                 if (info != null && !info.unlimitedTraffic) add("${Format.bytes(info.used)} / ${Format.bytes(info.total)}")
             }
             Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            // The provider's note, one line here; Home shows it in full.
+            profile.announce?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = c.accent, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         Icon(Icons.Rounded.NetworkPing, "Пинг", tint = c.ink3,
             modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).pointerHoverIcon(PointerIcon.Hand)
@@ -295,6 +298,14 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(text = { Text("Проверить пинг") }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) },
                     onClick = { menu = false; controller.pingAll(profile.id) })
+                profile.webPageUrl?.let { url ->
+                    DropdownMenuItem(text = { Text("Кабинет подписки") }, leadingIcon = { Icon(Icons.Rounded.Public, null) },
+                        onClick = { menu = false; controller.platform.openUrl(url) })
+                }
+                profile.supportUrl?.let { url ->
+                    DropdownMenuItem(text = { Text("Поддержка") }, leadingIcon = { Icon(Icons.Rounded.SupportAgent, null) },
+                        onClick = { menu = false; controller.platform.openUrl(url) })
+                }
                 profile.url?.let { url ->
                     DropdownMenuItem(text = { Text("Скопировать ссылку") }, leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
                         onClick = { menu = false; controller.platform.copyToClipboard(url) })

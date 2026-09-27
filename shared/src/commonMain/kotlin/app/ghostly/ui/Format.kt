@@ -38,6 +38,18 @@ object Format {
         return "$hours ${plural(hours, "час", "часа", "часов")}"
     }
 
+    /** "обновлена 5 мин назад" — when a subscription was last fetched. */
+    fun updatedAgo(atMs: Long, nowMs: Long): String {
+        if (atMs <= 0) return "ещё не обновлялась"
+        val min = (nowMs - atMs).coerceAtLeast(0) / 60_000
+        return when {
+            min < 1 -> "обновлена только что"
+            min < 60 -> "обновлена $min мин назад"
+            min < 24 * 60 -> "обновлена ${min / 60} ч назад"
+            else -> (min / (24 * 60)).let { d -> "обновлена $d ${plural(d, "день", "дня", "дней")} назад" }
+        }
+    }
+
     fun plural(n: Long, one: String, few: String, many: String): String {
         val m10 = n % 10
         val m100 = n % 100

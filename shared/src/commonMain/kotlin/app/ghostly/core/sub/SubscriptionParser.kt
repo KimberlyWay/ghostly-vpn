@@ -19,6 +19,8 @@ data class ParsedSubscription(
     val info: SubscriptionInfo?,
     val supportUrl: String?,
     val webPageUrl: String?,
+    /** `announce`: the provider's note for the user (plain or `base64:`). */
+    val announce: String? = null,
     val updateIntervalHours: Int?,
     val servers: List<Server>,
     /** Clash/mihomo config when the body was YAML (see [app.ghostly.core.model.Profile.mihomo]). */
@@ -74,6 +76,7 @@ object SubscriptionParser {
             },
             supportUrl = h["support-url"],
             webPageUrl = h["profile-web-page-url"],
+            announce = h["announce"]?.let(::decodeTitle)?.trim()?.takeIf { it.isNotEmpty() }?.take(1000),
             updateIntervalHours = h["profile-update-interval"]?.trim()?.toIntOrNull(),
             servers = dedupeIds(servers),
             mihomo = mihomo,
