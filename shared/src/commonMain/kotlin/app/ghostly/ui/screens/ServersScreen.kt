@@ -311,7 +311,7 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
                 if (refreshing) Spinner(c.accent, Modifier.size(18.dp))
                 else Icon(Icons.Rounded.Refresh, "Обновить", tint = c.ink3,
-                    modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.refresh(profile.id) }.padding(8.dp))
+                    modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.refresh(profile.id, manual = true) }.padding(8.dp))
             }
         }
         Box {
@@ -442,7 +442,7 @@ private fun ServerRow(
             if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         Spacer(Modifier.width(8.dp))
-        if (!server.isAuto) PingText(ping?.ms, loading, Modifier.clip(RoundedCornerShape(8.dp)).clickable { controller.ping(server.id) }.padding(horizontal = 6.dp, vertical = 4.dp))
+        if (server.canPing) PingText(ping?.ms, loading, Modifier.clip(RoundedCornerShape(8.dp)).clickable { controller.ping(server.id) }.padding(horizontal = 6.dp, vertical = 4.dp))
         if (favorite || showTools) {
             Icon(
                 if (favorite) Icons.Rounded.Star else Icons.Rounded.StarBorder, null,

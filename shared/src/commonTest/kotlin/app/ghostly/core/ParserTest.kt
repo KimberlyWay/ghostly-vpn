@@ -129,6 +129,17 @@ class ParserTest {
 
         val global = XrayConfigBuilder.build(parsed.servers[0], AppSettings(routingMode = RoutingMode.GLOBAL), Ingress.TunFd(1500))
         assertTrue(global["routing"]!!.jsonObject["rules"]!!.jsonArray.none { it.toString().contains("geoip:ru") })
+        // A balancer is pinged through its first real proxy, even when "direct" is listed first.
+        assertTrue(parsed.servers[0].canPing)
+        val directFirst = SubscriptionParser.serverFromConfig(
+            JsonX.parseToJsonElement(cfg).jsonArray[0].jsonObject.let { c ->
+                val obs = c["outbounds"]!!.jsonArray
+                JsonObject(c + ("outbounds" to JsonArray(listOf(obs.last()) + obs.dropLast(1))))
+            },
+            "p:x",
+        )!!
+        val ping = XrayConfigBuilder.buildPing(directFirst) as JsonObject
+        assertEquals("a", ping["outbounds"]!!.jsonArray[0].jsonObject["tag"]!!.jsonPrimitive.content)
     }
 
     @Test

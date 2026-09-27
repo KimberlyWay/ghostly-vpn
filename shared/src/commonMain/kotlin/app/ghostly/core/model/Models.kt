@@ -83,6 +83,8 @@ data class Server(
     val mihomo: JsonObject? = null,
 ) {
     val isAuto: Boolean get() = protocol == "balancer" || protocol == MIHOMO_PROFILE
+    /** A balancer is measured through its main proxy; a whole mihomo profile has no single endpoint. */
+    val canPing: Boolean get() = protocol != MIHOMO_PROFILE
     val isWhitelist: Boolean get() = pool == "wl"
 }
 
