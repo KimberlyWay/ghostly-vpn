@@ -132,14 +132,16 @@ class MihomoVpnService : VpnService() {
                 builder.addDnsServer(TUN_DNS6)
             }
             if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false)
+            // Our own package must stay INSIDE the tunnel, exactly like Prizrak Box's TunService
+            // (`allInclude + packageName` / `allExclude - packageName`). The "system" stack answers
+            // every app connection from a socket this process listens on at the TUN gateway; if our
+            // UID is excluded, Android routes those replies past the tunnel and no connection ever
+            // completes — "connected", but no traffic. The core's own uplinks don't loop back: each
+            // one is protect()-ed through markSocket below.
             when (split) {
-                SplitMode.ONLY_SELECTED -> apps.forEach { runCatching { builder.addAllowedApplication(it) } }
-                SplitMode.BYPASS_SELECTED -> {
-                    builder.addDisallowedApplication(packageName)
-                    apps.forEach { runCatching { builder.addDisallowedApplication(it) } }
-                }
-                // Our own sockets (the core's uplinks, the app's controller calls) stay outside the tunnel.
-                SplitMode.OFF -> builder.addDisallowedApplication(packageName)
+                SplitMode.ONLY_SELECTED -> (apps.toSet() + packageName).forEach { runCatching { builder.addAllowedApplication(it) } }
+                SplitMode.BYPASS_SELECTED -> (apps.toSet() - packageName).forEach { runCatching { builder.addDisallowedApplication(it) } }
+                SplitMode.OFF -> Unit
             }
             val fd = builder.establish()?.detachFd() ?: throw IllegalStateException("Нет разрешения на VPN")
 
@@ -158,7 +160,7 @@ class MihomoVpnService : VpnService() {
             )
             running = true
             watchNetwork()
-            log("tun up (fd=$fd), reporting connected")
+            log("tun up (fd=$fd, stack=system, split=$split), own package inside the tunnel; reporting connected")
             report(STATE_CONNECTED)
             updateNotification("mihomo")
         } catch (e: Throwable) {
