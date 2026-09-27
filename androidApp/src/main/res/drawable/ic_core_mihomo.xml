@@ -1,0 +1,7 @@
+<!-- Mihomo core badge glyph: a cat's head (the Clash.Meta family mascot). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M4,19 L4,5.5 Q4,4.6 4.8,5 L9.2,8.4 Q12,7.7 14.8,8.4 L19.2,5 Q20,4.6 20,5.5 L20,19 Q20,21 18,21 L6,21 Q4,21 4,19 Z M8.1,13.6 a1.3,1.7 0 1,0 2.6,0 a1.3,1.7 0 1,0 -2.6,0 Z M13.3,13.6 a1.3,1.7 0 1,0 2.6,0 a1.3,1.7 0 1,0 -2.6,0 Z M11,17.2 L13,17.2 L12,18.3 Z" />
+</vector>

@@ -198,7 +198,7 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
         SectionTitle("Подключение")
         Group {
             SettingRow("Ядро", null, Icons.Rounded.Memory)
-            Segmented(listOf(CoreType.XRAY to "Xray", CoreType.MIHOMO to "mihomo"), s.core, { v -> set { it.copy(core = v) } })
+            Segmented(listOf(CoreType.XRAY to "Xray", CoreType.MIHOMO to "Mihomo"), s.core, { v -> set { it.copy(core = v) } })
             Text(
                 when (s.core) {
                     CoreType.XRAY -> "Рекомендуется. Одна кнопка «Авто», белые списки и умное переключение серверов. Подписки в формате Clash на этом ядре скрыты."
@@ -695,7 +695,7 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         Group {
             SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
             SettingRow(
-                "Логи mihomo", "Скопировать журнал последнего запуска ядра", Icons.Rounded.ContentCopy,
+                "Логи Mihomo", "Скопировать журнал последнего запуска ядра", Icons.Rounded.ContentCopy,
                 onClick = { controller.haptic(); controller.copyMihomoLogs() },
             ) { Chevron() }
             if (controller.platform.updateAsset != null) {
