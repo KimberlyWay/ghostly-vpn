@@ -96,6 +96,8 @@ object AndroidMihomo : MihomoCore {
             val intent = Intent(app, MihomoVpnService::class.java)
                 .setAction(MihomoVpnService.ACTION_START)
                 .putExtra(MihomoVpnService.EXTRA_NAME, server.name)
+                .putExtra(MihomoVpnService.EXTRA_CONTROLLER, controller)
+                .putExtra(MihomoVpnService.EXTRA_SECRET, secret)
                 .putExtra(MihomoVpnService.EXTRA_MTU, settings.mtu)
                 .putExtra(MihomoVpnService.EXTRA_IPV6, settings.ipv6)
                 .putExtra(MihomoVpnService.EXTRA_SPLIT_MODE, settings.splitMode.name)
