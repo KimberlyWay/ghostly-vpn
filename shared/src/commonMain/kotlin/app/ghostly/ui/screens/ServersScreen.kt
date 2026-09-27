@@ -188,7 +188,7 @@ private fun ServersList(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                IconBubble(Icons.Rounded.NetworkPing, { controller.haptic(); controller.pingAll() }, active = pinging.isNotEmpty())
+                IconBubble(Icons.Rounded.NetworkPing, { controller.haptic(app.ghostly.core.vpn.Haptic.TICK); controller.pingAll() }, active = pinging.isNotEmpty())
             }
         }
 
@@ -227,7 +227,7 @@ private fun ServersList(
                     groups, openGroups.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }.toSet(), testing, listPad,
                     onToggle = { g -> (prefix + g).let { k -> openGroups = if (k in openGroups) openGroups - k else openGroups + k } },
                     onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m, profile.id) },
-                    onTest = { g -> controller.haptic(); controller.testGroup(g, profile.id) },
+                    onTest = { g -> controller.haptic(app.ghostly.core.vpn.Haptic.TICK); controller.testGroup(g, profile.id) },
                     scope = profile.id,
                 )
             }

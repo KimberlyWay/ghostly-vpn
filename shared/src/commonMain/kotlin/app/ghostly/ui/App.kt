@@ -1,6 +1,7 @@
 package app.ghostly.ui
 
 import androidx.compose.animation.AnimatedContent
+import app.ghostly.ui.screens.predictiveCard
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -111,7 +112,7 @@ fun GhostlyApp(controller: GhostlyController) {
     val design by controller.design.tokens.collectAsState()
     // A seasonal accent from the server applies only while the user keeps the default colour.
     val accent = design.accentArgb()?.takeIf { settings.accent == app.ghostly.core.model.ThemeAccent.GHOST } ?: settings.accent.argb
-    GhostlyTheme(accent, settings.reduceMotion) { androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.components.LocalHaptic provides { controller.haptic() }, app.ghostly.ui.theme.LocalDesign provides design) {
+    GhostlyTheme(accent, settings.reduceMotion) { androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.components.LocalHaptic provides { controller.haptic(app.ghostly.core.vpn.Haptic.TICK) }, app.ghostly.ui.components.LocalHapticOf provides { k -> controller.haptic(k) }, app.ghostly.ui.theme.LocalDesign provides design) {
         var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
         var addOpen by remember { mutableStateOf(false) }
         var pickerOpen by remember { mutableStateOf(false) }
@@ -123,7 +124,25 @@ fun GhostlyApp(controller: GhostlyController) {
 
         // Android back gesture: any tab goes back to Home first; only Home leaves the app.
         // Registered before the screens, so a screen's own handler (settings sub-pages) wins.
-        androidx.compose.ui.backhandler.BackHandler(enabled = onboarded && !wideLayout && tab != Tab.HOME) { tab = Tab.HOME }
+        // While dragging back the current tab shrinks toward Home (predictive back, Android 14+).
+        var tabPeek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        androidx.compose.ui.backhandler.PredictiveBackHandler(enabled = onboarded && !wideLayout && tab != Tab.HOME) { progress ->
+            try {
+                progress.collect { tabPeek = it.progress }
+                tabPeek = 0f
+                tab = Tab.HOME
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                tabPeek = 0f
+                throw e
+            }
+        }
+        // On Home the first back only warns; a second one within 2 s leaves the app.
+        var exitArmed by remember { mutableStateOf(false) }
+        androidx.compose.ui.backhandler.BackHandler(enabled = onboarded && !wideLayout && tab == Tab.HOME && !exitArmed) {
+            exitArmed = true
+            toast = "Свайпните ещё раз, чтобы выйти"
+        }
+        LaunchedEffect(exitArmed) { if (exitArmed) { delay(2000); exitArmed = false } }
 
         LaunchedEffect(Unit) {
             controller.events.collect { msg ->
@@ -147,10 +166,18 @@ fun GhostlyApp(controller: GhostlyController) {
                     wide -> DesktopShell(controller, tab, { tab = it }, onAdd = { addOpen = true })
                     else -> {
                         val pad = PaddingValues(top = insets.calculateTopPadding() + 8.dp, bottom = insets.calculateBottomPadding() + 96.dp)
+                        // Predictive back to Главная: it is drawn beneath while the current tab slides off as a card.
+                        if (tabPeek > 0f && tab != Tab.HOME) {
+                            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f + 0.45f * tabPeek }, contentAlignment = Alignment.TopCenter) {
+                                Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
+                                    HomeScreen(controller, onPickServer = {}, contentPadding = pad)
+                                }
+                            }
+                        }
                         AnimatedContent(
                             targetState = tab,
                             transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().predictiveCard(tabPeek, Ghost.colors.bgRaised),
                         ) { t ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {

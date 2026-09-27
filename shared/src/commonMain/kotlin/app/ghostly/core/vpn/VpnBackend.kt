@@ -92,7 +92,8 @@ interface PlatformInfo {
     fun copyToClipboard(text: String)
     fun readClipboard(): String?
     fun share(text: String) = copyToClipboard(text)
-    fun haptic() {}
+    /** Vibration of the given strength (no-op where there is no motor). */
+    fun haptic(kind: Haptic = Haptic.CLICK) {}
 
     /** Release file name for this platform/ABI ("Ghostly-Android.apk", "Ghostly-Windows.exe"); null = no self-update. */
     val updateAsset: String? get() = null
@@ -159,3 +160,18 @@ interface KillSwitch {
 enum class NetType { WIFI, CELLULAR, ETHERNET, UNKNOWN }
 
 data class AppEntry(val packageName: String, val label: String, val isSystem: Boolean)
+
+
+/** How hard a touch should be felt. */
+enum class Haptic {
+    /** Switches, rows, small touches. */
+    TICK,
+    /** Tabs, picking a server or a selector member, buttons. */
+    CLICK,
+    /** The big connect / disconnect button — a solid thump. */
+    HEAVY,
+    /** Connected: a double knock. */
+    SUCCESS,
+    /** Connection failed: a short rattle. */
+    ERROR,
+}

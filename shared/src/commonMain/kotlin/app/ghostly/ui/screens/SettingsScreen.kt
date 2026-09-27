@@ -1,6 +1,7 @@
 package app.ghostly.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -112,8 +113,27 @@ const val GITHUB_URL = "https://github.com/Nelxi/ghostly-vpn"
 fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues) {
     var page by rememberSaveable { mutableStateOf(Page.MAIN) }
     // The system back gesture climbs out of a sub-page instead of leaving the app.
-    androidx.compose.ui.backhandler.BackHandler(enabled = page != Page.MAIN) { page = Page.MAIN }
+    // Predictive back: while the finger drags, the page slides aside and the main list shows beneath.
+    var peek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    androidx.compose.ui.backhandler.PredictiveBackHandler(enabled = page != Page.MAIN) { progress ->
+        try {
+            progress.collect { peek = it.progress }
+            peek = 0f
+            page = Page.MAIN
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            peek = 0f
+            throw e
+        }
+    }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+    // Where back leads, fully drawn beneath; the page on top turns into an opaque card that shrinks and slides off.
+    if (peek > 0f && page != Page.MAIN) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f + 0.45f * peek }) {
+            MainSettings(controller, contentPadding) {}
+        }
+    }
     AnimatedContent(
+        modifier = Modifier.fillMaxSize().predictiveCard(peek, app.ghostly.ui.theme.Ghost.colors.bgRaised),
         targetState = page,
         transitionSpec = {
             val forward = targetState != Page.MAIN
@@ -131,7 +151,7 @@ fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues)
             Page.ADVANCED -> AdvancedPage(controller, contentPadding, back)
             Page.ABOUT -> AboutPage(controller, contentPadding, back)
         }
-    }
+    }}
 }
 
 @Composable
@@ -693,3 +713,20 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         }
     }
 }
+
+
+/**
+ * The screen under the finger during a predictive back gesture: shrinks, slides right, gets rounded
+ * corners, a shadow and an opaque background (screens are transparent over the aurora, so without it
+ * the destination beneath couldn't be seen).
+ */
+internal fun Modifier.predictiveCard(p: Float, bg: androidx.compose.ui.graphics.Color): Modifier = if (p <= 0f) this else this
+    .graphicsLayer {
+        val k = 1f - 0.14f * p
+        scaleX = k; scaleY = k
+        translationX = size.width * 0.22f * p
+        shadowElevation = 24.dp.toPx() * p
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(32.dp * p)
+        clip = true
+    }
+    .background(bg)

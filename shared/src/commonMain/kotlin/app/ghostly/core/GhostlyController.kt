@@ -159,6 +159,7 @@ class GhostlyController(
             backend.state.collect { s ->
                 when (s) {
                     is VpnState.Connected -> {
+                        if (userWantsConnection) haptic(app.ghostly.core.vpn.Haptic.SUCCESS)
                         failoverAttempts = 0
                         releaseKillSwitch()
                         startGuard()
@@ -166,6 +167,7 @@ class GhostlyController(
                         if (_settings.value.autoUpdateSubs) launch(Dispatchers.IO) { kotlinx.coroutines.delay(3_000); refreshAll() }
                     }
                     is VpnState.Failed -> {
+                        if (userWantsConnection) haptic(app.ghostly.core.vpn.Haptic.ERROR)
                         stopGuard()
                         if (userWantsConnection) {
                             engageKillSwitch()
@@ -994,8 +996,8 @@ class GhostlyController(
         autoUpdateSubs = true, autoConnect = false, startOnBoot = false, pingUrl = "",
     )
 
-    fun haptic() {
-        if (_settings.value.haptics) platform.haptic()
+    fun haptic(kind: app.ghostly.core.vpn.Haptic = app.ghostly.core.vpn.Haptic.CLICK) {
+        if (_settings.value.haptics) platform.haptic(kind)
     }
 
     fun markOnboarded() {
