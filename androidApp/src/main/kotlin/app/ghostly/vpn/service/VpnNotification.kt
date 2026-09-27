@@ -13,9 +13,11 @@ import androidx.core.content.ContextCompat
 import app.ghostly.vpn.R
 
 /**
- * The ongoing VPN notification, shared by the Xray and mihomo services:
- * title = server, header = subscription · core with a running connection timer,
- * body = live speed; expanded it adds the session traffic. The core shows as a badge on the right.
+ * The ongoing VPN notification, shared by the Xray and mihomo services: header = core with a
+ * running connection timer, body = live speed, expanded = session traffic too; the core shows as a
+ * badge on the right. With Xray the title is the server and the subscription joins the header.
+ * With Mihomo traffic goes through the selectors (each may point at another country), so the
+ * title is the subscription itself.
  */
 internal object VpnNotification {
 
@@ -53,12 +55,15 @@ internal object VpnNotification {
     ): Notification {
         val speed = stats?.let { "↓ ${speed(it.down)}   ↑ ${speed(it.up)}" }
         val text = status ?: speed ?: context.getString(R.string.notif_connected)
-        val header = listOfNotNull(subscription?.takeIf { it.isNotBlank() }, core.label).joinToString(" · ")
+        val sub = subscription?.takeIf { it.isNotBlank() }
+        val bySubscription = core == Core.MIHOMO && sub != null
+        val title = sub?.takeIf { bySubscription } ?: server.ifEmpty { context.getString(R.string.app_name) }
+        val header = if (bySubscription) core.label else listOfNotNull(sub, core.label).joinToString(" · ")
         val b = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_ghost)
             .setColor(0xFFA88DFF.toInt())
             .setLargeIcon(badge(context, core))
-            .setContentTitle(server.ifEmpty { context.getString(R.string.app_name) })
+            .setContentTitle(title)
             .setContentText(text)
             .setSubText(header)
             .setContentIntent(open)
@@ -73,8 +78,8 @@ internal object VpnNotification {
             val lines = listOfNotNull(
                 text,
                 stats?.let { "За сессию: ↓ ${bytes(it.downTotal)}  ↑ ${bytes(it.upTotal)}" },
-                subscription?.takeIf { it.isNotBlank() }?.let { "Подписка: $it" },
-                "Ядро: ${core.label}",
+                if (bySubscription) "Ядро: ${core.label} · маршруты по селекторам"
+                else listOfNotNull(sub?.let { "Подписка: $it" }, "Ядро: ${core.label}").joinToString(" · "),
             )
             b.setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
         } else {
