@@ -168,17 +168,17 @@ fun SubscriptionPage(controller: GhostlyController, profileId: String, onAdd: ()
             }
         }
 
-        // Facts from the headers
-        Spacer(Modifier.height(12.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.05f)).padding(horizontal = 14.dp, vertical = 6.dp)) {
-            if (info != null && info.pools.isEmpty() && info.used > 0) {
-                Fact("Скачано", Format.bytes(info.download))
-                Fact("Отдано", Format.bytes(info.upload))
+        // Facts from the headers (links are the buttons below, not repeated here)
+        val traffic = info != null && info.pools.isEmpty() && info.used > 0
+        if (traffic || profile.url != null) {
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.05f)).padding(horizontal = 14.dp, vertical = 6.dp)) {
+                if (traffic) {
+                    Fact("Скачано", Format.bytes(info!!.download))
+                    Fact("Отдано", Format.bytes(info.upload))
+                }
+                if (profile.url != null) Fact("Автообновление", everyHours(profile.updateIntervalHours))
             }
-            if (profile.url != null) Fact("Автообновление", "каждые ${profile.updateIntervalHours} ${Format.plural(profile.updateIntervalHours.toLong(), "час", "часа", "часов")}")
-            profile.webPageUrl?.let { Fact("Кабинет", it.substringAfter("://").substringBefore('/')) }
-            profile.supportUrl?.let { Fact("Поддержка", it.substringAfter("://").trimEnd('/')) }
-            profile.url?.let { Fact("Ссылка", it.substringAfter("://").substringBefore('/') + "/…") }
         }
 
         // Actions
@@ -254,6 +254,9 @@ fun SubscriptionPage(controller: GhostlyController, profileId: String, onAdd: ()
         }
     }
 }
+
+private fun everyHours(h: Int): String =
+    if (h <= 1) "каждый час" else "каждые $h ${Format.plural(h.toLong(), "час", "часа", "часов")}"
 
 @Composable
 private fun Fact(label: String, value: String) {
