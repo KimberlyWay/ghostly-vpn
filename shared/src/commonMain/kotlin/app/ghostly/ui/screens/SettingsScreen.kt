@@ -133,7 +133,7 @@ fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues)
         }
     }
     AnimatedContent(
-        modifier = Modifier.fillMaxSize().predictiveCard(peek),
+        modifier = Modifier.fillMaxSize().predictiveCard(peek, app.ghostly.ui.theme.Ghost.colors.bgRaised),
         targetState = page,
         transitionSpec = {
             val forward = targetState != Page.MAIN
@@ -720,7 +720,7 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
  * corners, a shadow and an opaque background (screens are transparent over the aurora, so without it
  * the destination beneath couldn't be seen).
  */
-internal fun Modifier.predictiveCard(p: Float): Modifier = if (p <= 0f) this else this
+internal fun Modifier.predictiveCard(p: Float, bg: androidx.compose.ui.graphics.Color): Modifier = if (p <= 0f) this else this
     .graphicsLayer {
         val k = 1f - 0.14f * p
         scaleX = k; scaleY = k
@@ -729,4 +729,4 @@ internal fun Modifier.predictiveCard(p: Float): Modifier = if (p <= 0f) this els
         shape = androidx.compose.foundation.shape.RoundedCornerShape(32.dp * p)
         clip = true
     }
-    .background(app.ghostly.ui.theme.Ghost.colors.bgRaised)
+    .background(bg)

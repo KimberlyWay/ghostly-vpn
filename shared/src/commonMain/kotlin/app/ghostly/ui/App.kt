@@ -173,7 +173,7 @@ fun GhostlyApp(controller: GhostlyController) {
                         AnimatedContent(
                             targetState = tab,
                             transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
-                            modifier = Modifier.fillMaxSize().predictiveCard(tabPeek),
+                            modifier = Modifier.fillMaxSize().predictiveCard(tabPeek, Ghost.colors.bgRaised),
                         ) { t ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
