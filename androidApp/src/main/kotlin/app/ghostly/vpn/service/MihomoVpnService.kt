@@ -41,30 +41,28 @@ class MihomoVpnService : VpnService() {
     private var running = false
     private var serverName = ""
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var logWriter: java.io.PrintWriter? = null
     private var logcatJob: kotlinx.coroutines.Job? = null
 
     // ------------------------------------------------------------------ core log
     // Everything the core and this service do lands in files/clash/logs/core.log, one file per
     // start, so the app can show/copy it when mihomo misbehaves (the :mihomo process dies with the
-    // tunnel and takes stdout with it — a file is the only trace that survives).
+    // tunnel and takes stdout with it — a file is the only trace that survives). The app process
+    // appends its own lines to the same file, so every write here must be an O_APPEND append too:
+    // a writer that keeps its own offset would silently overwrite the other process's lines.
 
     private val logTime = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
 
     @Synchronized
     private fun log(line: String) {
         Log.i(TAG, line)
-        runCatching { logWriter?.apply { println(logTime.format(java.util.Date()) + " " + line); flush() } }
+        runCatching { AndroidMihomo.logFile(this).appendText(logTime.format(java.util.Date()) + " " + line + "\n") }
     }
 
     private fun startLog() {
         runCatching {
             val f = AndroidMihomo.logFile(this)
             f.parentFile?.mkdirs()
-            synchronized(this) {
-                logWriter?.close()
-                logWriter = java.io.PrintWriter(java.io.FileWriter(f, false))
-            }
+            f.writeText("")
         }
         if (logcatJob == null) logcatJob = scope.launch {
             for (m in Clash.subscribeLogcat()) log("[${m.level.name.lowercase()}] ${m.message}")
@@ -186,7 +184,6 @@ class MihomoVpnService : VpnService() {
             runCatching { Clash.reset() }
         }
         runCatching { Clash.clearOverride(Clash.OverrideSlot.Session) }
-        synchronized(this) { runCatching { logWriter?.close() }; logWriter = null }
         running = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()

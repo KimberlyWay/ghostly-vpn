@@ -137,12 +137,15 @@ object AndroidMihomo : MihomoCore {
                 val p = pending ?: return
                 scope.launch {
                     val client = MihomoApi(p.controller, p.secret)
+                    client.log = { log("api: $it") }
                     // The core answers once the config is applied; normally right away.
                     var tries = 0
                     while (!client.ready() && tries++ < 50) delay(100)
                     log(if (tries >= 50) "controller NOT ready on 127.0.0.1:${p.controller} after ${tries * 100} ms" else "controller ready after ~${tries * 100} ms")
                     val applied = client.applyPicks(p.picks)
                     log("applyPicks(${p.picks.size}): " + (if (applied) "ok" else "FAILED") + " " + p.picks.joinToString { pk -> "${pk.group}→${pk.choice ?: "${pk.provider}#${pk.providerIndex}"}" })
+                    // What the core actually routes by now — the one line that settles "did it apply".
+                    log("groups now: " + client.groups().joinToString { g -> "${g.name}=${g.now}" })
                     version = client.version()
                     log("core version: $version")
                     api = client
