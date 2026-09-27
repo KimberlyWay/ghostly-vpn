@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -186,10 +187,17 @@ private fun ServersList(
 
         if (profiles.isEmpty()) item { EmptyServers(onAdd) }
 
-        // Quick pick: the fastest server right now.
-        val best = controller.bestServer()
-        if (best != null && query.isBlank()) item {
-            BestRow(best, pings[best.id]?.ms) { pick(best) }
+        // Quick pick: the fastest server right now — but with mihomo the selectors decide, so the
+        // card leads to them instead of second-guessing the groups.
+        if (query.isBlank()) {
+            if (mihomoGroups.isNotEmpty()) item {
+                SelectorsRow(mihomoGroups.size) {
+                    controller.haptic()
+                    openGroups = if (openGroups.size < mihomoGroups.size) mihomoGroups.map { it.name }.toSet() else emptySet()
+                }
+            } else controller.bestServer()?.let { best ->
+                item { BestRow(best, pings[best.id]?.ms) { pick(best) } }
+            }
         }
 
         if (query.isBlank()) proxyGroups(
@@ -330,6 +338,33 @@ private fun BestRow(server: Server, ms: Long?, onClick: () -> Unit) {
             }
         }
         PingPill(ms, false)
+    }
+}
+
+/** mihomo: the way to pick is the selectors below — this card opens (or folds) all of them. */
+@Composable
+private fun SelectorsRow(count: Int, onClick: () -> Unit) {
+    val c = Ghost.colors
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
+            .pressScale(interaction, 0.97f, hover = 1.015f)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.White.copy(alpha = 0.045f))
+            .spotlight(c.accent, 180.dp)
+            .border(1.dp, c.line, RoundedCornerShape(20.dp))
+            .clickable(interaction, null, onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.AccountTree, null, tint = c.accent, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Выбор через селекторы", style = MaterialTheme.typography.titleSmall)
+            Text("Группы ниже решают, куда идёт трафик", style = MaterialTheme.typography.bodySmall, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text("$count", style = MaterialTheme.typography.labelMedium, color = c.ink3, modifier = Modifier.padding(horizontal = 6.dp))
+        Icon(Icons.Rounded.ExpandMore, null, tint = c.ink3, modifier = Modifier.size(20.dp))
     }
 }
 

@@ -64,6 +64,22 @@ class MihomoVpnService : VpnService() {
             val split = runCatching { SplitMode.valueOf(intent.getStringExtra(EXTRA_SPLIT_MODE) ?: "") }.getOrDefault(SplitMode.OFF)
             val apps = intent.getStringArrayExtra(EXTRA_SPLIT_APPS).orEmpty()
 
+            // The bridge erases external-controller from the profile itself (patchExternalController
+            // in Prizrak-Box's config processor) — the controller only survives through the override
+            // slot, the way ClashMetaForAndroid sets it. Without this the REST API never listens:
+            // selector picks, groups and traffic stats silently die while the tunnel "connects".
+            val controller = intent.getIntExtra(EXTRA_CONTROLLER, 0)
+            val secret = intent.getStringExtra(EXTRA_SECRET)
+            if (controller > 0) {
+                Clash.patchOverride(
+                    Clash.OverrideSlot.Session,
+                    com.github.kr328.clash.core.model.ConfigurationOverride().apply {
+                        externalController = "127.0.0.1:$controller"
+                        this.secret = secret
+                    },
+                )
+            }
+
             // Config first: a broken profile fails here, before the VPN takes over the network.
             Clash.load(AndroidMihomo.profileDir(this)).await()
 
@@ -74,6 +90,8 @@ class MihomoVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer(TUN_DNS)
                 .setBlocking(false)
+                // Like Prizrak Box: apps that legitimately manage their own sockets may bypass.
+                .allowBypass()
                 .setConfigureIntent(openAppIntent())
             if (ipv6) {
                 builder.addAddress(TUN_GATEWAY6, 126)
@@ -129,6 +147,7 @@ class MihomoVpnService : VpnService() {
             runCatching { Clash.stopTun() }
             runCatching { Clash.reset() }
         }
+        runCatching { Clash.clearOverride(Clash.OverrideSlot.Session) }
         running = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -229,6 +248,8 @@ class MihomoVpnService : VpnService() {
         const val ACTION_STOP = "app.ghostly.vpn.MIHOMO_STOP"
         const val ACTION_STATE = "app.ghostly.vpn.MIHOMO_STATE"
         const val EXTRA_NAME = "name"
+        const val EXTRA_CONTROLLER = "controller"
+        const val EXTRA_SECRET = "secret"
         const val EXTRA_MTU = "mtu"
         const val EXTRA_IPV6 = "ipv6"
         const val EXTRA_SPLIT_MODE = "split_mode"
