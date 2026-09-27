@@ -256,6 +256,7 @@ class GhostlyController(
                     info = parsed.info,
                     supportUrl = parsed.supportUrl,
                     webPageUrl = parsed.webPageUrl,
+                    announce = parsed.announce,
                     updateIntervalHours = parsed.updateIntervalHours ?: 12,
                     updatedAt = now(),
                     servers = parsed.servers,
@@ -359,6 +360,8 @@ class GhostlyController(
                             info = parsed.info ?: it.info,
                             supportUrl = parsed.supportUrl ?: it.supportUrl,
                             webPageUrl = parsed.webPageUrl ?: it.webPageUrl,
+                            // The note follows the provider: gone from the headers means gone here too.
+                            announce = parsed.announce,
                             updateIntervalHours = parsed.updateIntervalHours ?: it.updateIntervalHours,
                             updatedAt = now(),
                             servers = parsed.servers,
@@ -411,8 +414,26 @@ class GhostlyController(
 
     // ------------------------------------------------------------------ selection
 
+    /** Last server picked in each subscription, so switching back to it lands where the user left. */
+    private val lastInProfile = mutableMapOf<String, String>()
+
+    /**
+     * Make [profileId] the active subscription: its last picked server, else its «Авто», else its
+     * first server. Used by the subscription switcher on Home.
+     */
+    fun switchProfile(profileId: String) {
+        val profile = visibleProfiles().firstOrNull { it.id == profileId } ?: return
+        if (profile.servers.any { it.id == _selected.value }) return
+        val target = lastInProfile[profileId]?.takeIf { id -> profile.servers.any { it.id == id } }
+            ?: profile.servers.firstOrNull { it.isAuto }?.id
+            ?: profile.servers.firstOrNull()?.id
+            ?: return
+        select(target)
+    }
+
     fun select(serverId: String?) {
         val previous = _selected.value
+        previous?.let { id -> profileOf(id)?.let { lastInProfile[it.id] = id } }
         _selected.value = serverId
         if (serverId != null && _settings.value.core == app.ghostly.core.model.CoreType.MIHOMO) {
             // Picking a server is also a selector choice — remember it, so reconnects keep it.

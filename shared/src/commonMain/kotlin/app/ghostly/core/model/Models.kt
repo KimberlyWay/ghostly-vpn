@@ -13,6 +13,8 @@ data class Profile(
     val info: SubscriptionInfo? = null,
     val supportUrl: String? = null,
     val webPageUrl: String? = null,
+    /** Provider's note for the user (Remnawave/Happ `announce` header): shown with the subscription. */
+    val announce: String? = null,
     /** Update interval the provider asked for (`profile-update-interval`), hours. */
     val updateIntervalHours: Int = 12,
     val updatedAt: Long = 0,

@@ -78,6 +78,15 @@ class ParserTest {
     }
 
     @Test
+    fun remnawaveAnnounceHeader() {
+        val note = "👤 kimberly\n⌛ Осталось: 3"
+        val parsed = SubscriptionParser.parse(reality, mapOf("announce" to "base64:" + Base64.encode(note.encodeToByteArray())), "p")
+        assertEquals(note, parsed.announce)
+        assertEquals("plain note", SubscriptionParser.parse(reality, mapOf("announce" to "plain note"), "p").announce)
+        assertEquals(null, SubscriptionParser.parse(reality, mapOf("announce" to "  "), "p").announce)
+    }
+
+    @Test
     fun xrayJsonSubscriptionKeepsProviderRouting() {
         val cfg = """
             [{"remarks":"Auto","outbounds":[{"tag":"a","protocol":"vless","settings":{"vnext":[{"address":"h","port":1,"users":[{"id":"x"}]}]}},
