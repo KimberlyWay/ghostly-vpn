@@ -168,7 +168,7 @@ fun GhostlyApp(controller: GhostlyController) {
                         val pad = PaddingValues(top = insets.calculateTopPadding() + 8.dp, bottom = insets.calculateBottomPadding() + 96.dp)
                         // Predictive back to Главная: it is drawn beneath while the current tab slides off as a card.
                         if (tabPeek > 0f && tab != Tab.HOME) {
-                            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f + 0.45f * tabPeek }, contentAlignment = Alignment.TopCenter) {
+                            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.8f + 0.2f * tabPeek }, contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
                                     HomeScreen(controller, onPickServer = {}, contentPadding = pad)
                                 }
@@ -177,7 +177,7 @@ fun GhostlyApp(controller: GhostlyController) {
                         AnimatedContent(
                             targetState = tab,
                             transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
-                            modifier = Modifier.fillMaxSize().predictiveCard(tabPeek, Ghost.colors.bgRaised),
+                            modifier = Modifier.fillMaxSize().predictiveCard(tabPeek, app.ghostly.ui.screens.peekBrush()),
                         ) { t ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
