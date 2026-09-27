@@ -209,7 +209,8 @@ private fun ServersList(
             }
         }
 
-        profiles.forEach { profile ->
+        // The subscription in use comes first; the rest keep the order they were added in.
+        profiles.sortedByDescending { it.id == activeId }.forEach { profile ->
             val active = profile.id == activeId
             val groups = if (active) mihomoGroups else groupsByProfile[profile.id].orEmpty()
             val groupMembers = if (query.isBlank()) groups.flatMap { it.members }.toSet() else emptySet()
