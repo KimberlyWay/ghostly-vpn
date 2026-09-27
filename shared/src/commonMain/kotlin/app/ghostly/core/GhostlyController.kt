@@ -474,8 +474,16 @@ class GhostlyController(
      * The user picked [member] in selector [group] (from the list, running core or not). The choice is
      * saved, applied to the running core when there is one, and the selected server follows it.
      */
-    fun pickGroup(group: String, member: String) {
-        val profile = groupOwner(group) ?: return
+    fun pickGroup(group: String, member: String, profileId: String? = null) {
+        val profile = profileId?.let { id -> visibleProfiles().firstOrNull { it.id == id } } ?: groupOwner(group) ?: return
+        if (activeProfile()?.id != profile.id) {
+            // A selector of another subscription: that subscription becomes the active one
+            // (reconnecting onto it when connected), with this choice kept.
+            val s = profile.servers.firstOrNull { it.name == member }
+            if (s != null) select(s.id) else switchProfile(profile.id)
+            rememberPicks(profile, mapOf(group to member))
+            return
+        }
         rememberPicks(profile, mapOf(group to member))
         // The row on the Home screen follows the pick when it names a server of the profile.
         profile.servers.firstOrNull { it.name == member }?.let { s ->
@@ -505,6 +513,14 @@ class GhostlyController(
      * Selector groups drawn before the core runs (and while it starts): the same groups the running
      * core would report, built from the profiles, with saved choices as `now` and TCP pings as delays.
      */
+    /** Selectors of every subscription (profile id → groups), so each one shows its own before it is active. */
+    val staticMihomoGroupsByProfile: StateFlow<Map<String, List<app.ghostly.core.mihomo.ProxyGroupInfo>>> by lazy {
+        kotlinx.coroutines.flow.combine(profiles, _mihomoPicks, _selected, _pings, _settings) { list, picks, selected, pings, s ->
+            if (s.core != app.ghostly.core.model.CoreType.MIHOMO) emptyMap()
+            else list.associate { p -> p.id to staticGroups(p, picks[p.id] ?: emptyMap(), selected, pings) }.filterValues { it.isNotEmpty() }
+        }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyMap())
+    }
+
     val staticMihomoGroups: StateFlow<List<app.ghostly.core.mihomo.ProxyGroupInfo>> by lazy {
         kotlinx.coroutines.flow.combine(profiles, _mihomoPicks, _selected, _pings, _settings) { list, picks, selected, pings, s ->
             // Only the active subscription runs on the core, so only its selectors are shown:
@@ -582,23 +598,30 @@ class GhostlyController(
     }
 
     private val _groupsPinging = MutableStateFlow<Set<String>>(emptySet())
-    /** Selector groups being tested before the core runs (the live core reports its own, see [MihomoGroups.testing]). */
+    /**
+     * Selector groups being tested before the core runs, as [groupTestKey]s (the live core reports its
+     * own, see [MihomoGroups.testing]).
+     */
     val groupsPinging: StateFlow<Set<String>> = _groupsPinging.asStateFlow()
+
+    fun groupTestKey(profileId: String, group: String) = "$profileId\u0000$group"
 
     /**
      * The ping button of a selector group. With the core running it asks the core to test the group;
      * without it the group's servers (through nested groups too) are pinged like any other server —
      * on Android that briefly loads a ping-only core, so the delays are real ones, not handshakes.
      */
-    fun testGroup(group: String) {
-        if (mihomoGroups.groups.value.isNotEmpty()) {
+    fun testGroup(group: String, profileId: String? = null) {
+        val profile = profileId?.let { id -> visibleProfiles().firstOrNull { it.id == id } } ?: groupOwner(group) ?: return
+        // The running core only knows the active subscription's groups.
+        if (mihomoGroups.groups.value.isNotEmpty() && activeProfile()?.id == profile.id) {
             mihomoGroups.test(group)
             return
         }
-        if (group in _groupsPinging.value) return
-        val profile = groupOwner(group) ?: return
+        val key = groupTestKey(profile.id, group)
+        if (key in _groupsPinging.value) return
         val defs = profile.mihomo?.let { app.ghostly.core.mihomo.MihomoProfiles.groups(it) }.orEmpty()
-        val listed = staticMihomoGroups.value.associate { it.name to it.members }
+        val listed = staticMihomoGroupsByProfile.value[profile.id].orEmpty().associate { it.name to it.members }
         val names = HashSet<String>()
         val seen = HashSet<String>()
         fun walk(g: String) {
@@ -607,8 +630,8 @@ class GhostlyController(
         }
         walk(group)
         val job = pingServers(profile.servers.filter { it.name in names }) ?: return
-        _groupsPinging.update { it + group }
-        job.invokeOnCompletion { _groupsPinging.update { it - group } }
+        _groupsPinging.update { it + key }
+        job.invokeOnCompletion { _groupsPinging.update { it - key } }
     }
 
     /**

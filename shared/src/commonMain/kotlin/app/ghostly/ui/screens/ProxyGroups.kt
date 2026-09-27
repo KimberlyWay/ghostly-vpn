@@ -57,9 +57,11 @@ internal fun LazyListScope.proxyGroups(
     onToggle: (String) -> Unit,
     onSelect: (group: String, member: String) -> Unit,
     onTest: (String) -> Unit,
+    /** Keeps item keys apart when several subscriptions show their groups in one list. */
+    scope: String = "",
 ) {
     if (groups.isEmpty()) return
-    item(key = "mihomo:title") {
+    item(key = "mihomo:title:$scope") {
         val c = Ghost.colors
         Row(Modifier.padding(start = pad + 6.dp, top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.AccountTree, null, tint = c.accent, modifier = Modifier.size(14.dp))
@@ -68,11 +70,11 @@ internal fun LazyListScope.proxyGroups(
         }
     }
     groups.forEach { g ->
-        item(key = "mihomo:g:" + g.name) {
+        item(key = "mihomo:g:$scope\u0000" + g.name) {
             GroupHeader(g, g.name in open, g.name in testing, pad, { onToggle(g.name) }, { onTest(g.name) })
         }
         if (g.name in open) {
-            items(g.members, key = { "mihomo:m:" + g.name + "\u0000" + it }) { m ->
+            items(g.members, key = { "mihomo:m:$scope\u0000" + g.name + "\u0000" + it }) { m ->
                 MemberRow(m, g, pad) { onSelect(g.name, m) }
             }
         }
