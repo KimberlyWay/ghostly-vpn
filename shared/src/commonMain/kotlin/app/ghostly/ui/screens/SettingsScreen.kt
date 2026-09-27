@@ -1,6 +1,7 @@
 package app.ghostly.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -110,7 +111,28 @@ const val GITHUB_URL = "https://github.com/Nelxi/ghostly-vpn"
 @Composable
 fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues) {
     var page by rememberSaveable { mutableStateOf(Page.MAIN) }
+    // Predictive back: while the finger drags, the page slides away and the main list shows beneath.
+    var peek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    app.ghostly.ui.components.PlatformBackHandler(
+        enabled = page != Page.MAIN,
+        onProgress = { peek = it },
+        onCancel = { peek = 0f },
+        onBack = { peek = 0f; page = Page.MAIN },
+    )
+    Box(Modifier.fillMaxSize()) {
+    if (peek > 0f && page != Page.MAIN) {
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            val k = 0.94f + 0.06f * peek
+            scaleX = k; scaleY = k; alpha = 0.35f + 0.65f * peek
+        }) { MainSettings(controller, contentPadding) {} }
+    }
     AnimatedContent(
+        modifier = Modifier.fillMaxSize().graphicsLayer {
+            translationX = size.width * 0.28f * peek
+            val k = 1f - 0.08f * peek
+            scaleX = k; scaleY = k
+            alpha = 1f - 0.35f * peek
+        },
         targetState = page,
         transitionSpec = {
             val forward = targetState != Page.MAIN
@@ -128,6 +150,7 @@ fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues)
             Page.ADVANCED -> AdvancedPage(controller, contentPadding, back)
             Page.ABOUT -> AboutPage(controller, contentPadding, back)
         }
+    }
     }
 }
 
@@ -670,7 +693,9 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         }
         app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(bottom = 12.dp))
         Group {
-            SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
+            val core = controller.settings.collectAsState().value.core
+            val dual = controller.backend as? app.ghostly.core.mihomo.DualCoreBackend
+            SettingRow("Ядро", dual?.let { if (core == CoreType.MIHOMO) it.mihomo.coreVersion() else it.xray.coreVersion() } ?: controller.backend.coreVersion(), Icons.Rounded.Speed)
             if (controller.platform.updateAsset != null) {
                 val last by controller.updater.lastCheck.collectAsState()
                 SettingRow("Проверить обновления", last ?: "Скачиваются с нашего сервера и проверяются по SHA-256", Icons.Rounded.Refresh, onClick = { controller.checkUpdates(manual = true) }) { Chevron() }

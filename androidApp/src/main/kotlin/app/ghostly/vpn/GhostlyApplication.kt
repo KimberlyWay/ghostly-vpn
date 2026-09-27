@@ -102,9 +102,7 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
     @Volatile var hapticView: java.lang.ref.WeakReference<android.view.View>? = null
 
     override fun haptic() {
-        // The motor's own "click" first — it plays on every ROM with a vibrator (Nothing OS, MIUI, One UI).
-        // (0.2.2 asked the window for CONTEXT_CLICK, a mouse-context haptic some ROMs "perform" silently.)
-        if (vibrateClick()) return
+        if (vibrateTick()) return
         val view = hapticView?.get() ?: return
         val run = Runnable {
             @Suppress("DEPRECATION")
@@ -113,18 +111,34 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else view.post(run)
     }
 
-    /** The motor's predefined "click" (a 40 ms pulse on old Android); false when there is no vibrator. */
-    private fun vibrateClick(): Boolean {
-        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
-            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
-        }
-        if (vibrator == null || !vibrator.hasVibrator()) return false
+    private val vibrator: Vibrator? by lazy {
+        if (Build.VERSION.SDK_INT >= 31) context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        else @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)
+    }
+
+    /**
+     * A strong click. The predefined EFFECT_CLICK (0.2.3–0.2.4) is a few-ms tick that
+     * many motors barely move for, and ROMs scale it by the "touch feedback" setting — on some phones
+     * nothing was felt at all. Tagged as hardware feedback (like a key press), which that setting
+     * doesn't mute. False when there is no vibrator.
+     */
+    private fun vibrateTick(): Boolean {
+        val v = vibrator ?: return false
+        if (!v.hasVibrator()) return false
         return runCatching {
-            val effect = if (Build.VERSION.SDK_INT >= 29) VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-            else VibrationEffect.createOneShot(40, VibrationEffect.DEFAULT_AMPLITUDE)
-            vibrator.vibrate(effect)
+            val effect = when {
+                // Linear motors (Nothing, Pixel, Samsung flagships): the crisp system click at full strength.
+                Build.VERSION.SDK_INT >= 30 && v.areAllPrimitivesSupported(VibrationEffect.Composition.PRIMITIVE_CLICK) ->
+                    VibrationEffect.startComposition().addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, 1f).compose()
+                v.hasAmplitudeControl() -> VibrationEffect.createOneShot(22, 255)
+                else -> VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE)
+            }
+            if (Build.VERSION.SDK_INT >= 33) {
+                v.vibrate(effect, android.os.VibrationAttributes.createForUsage(android.os.VibrationAttributes.USAGE_HARDWARE_FEEDBACK))
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(effect, android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build())
+            }
         }.isSuccess
     }
 

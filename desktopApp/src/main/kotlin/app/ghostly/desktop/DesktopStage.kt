@@ -315,7 +315,7 @@ class DesktopStage(dataDir: String) : StageSource {
 
     private companion object {
         const val POLL_MS = 1200L
-        const val LYRIC_LEAD_MS = 320L
+        const val LYRIC_LEAD_MS = 620L
     }
 }
 

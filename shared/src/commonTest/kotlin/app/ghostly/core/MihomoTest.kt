@@ -56,6 +56,18 @@ class MihomoTest {
     """.trimIndent()
 
     @Test
+    fun selectorsAreShownBeforeConnectingWithSavedPicks() {
+        val cfg = SubscriptionParser.parse(yaml, emptyMap(), "p1").mihomo!!
+        val groups = app.ghostly.core.mihomo.MihomoGroups.staticGroups(cfg, mapOf("Europe" to "🇳🇱 NL", "Proxy" to "gone"))
+        assertEquals(listOf("Proxy", "Europe", "Auto"), groups.map { it.name })
+        val byName = groups.associateBy { it.name }
+        assertEquals("🇳🇱 NL", byName["Europe"]!!.now, "saved pick is shown")
+        assertEquals("Auto", byName["Proxy"]!!.now, "unknown saved pick falls back to the first member")
+        assertNull(byName["Auto"]!!.now, "automatic groups choose by themselves")
+        assertEquals(setOf("Auto", "Europe"), byName["Proxy"]!!.nestedGroups)
+    }
+
+    @Test
     fun parsesClashYaml() {
         val parsed = SubscriptionParser.parse(yaml, emptyMap(), "p1")
         assertEquals("Test Clash", parsed.title)
@@ -91,7 +103,7 @@ class MihomoTest {
         assertEquals("GEOSITE,category-ads-all,REJECT", rules.first())
         assertEquals("MATCH,Proxy", rules.last())
         assertTrue((cfg["listeners"] as JsonArray).isNotEmpty())
-        assertEquals(2, plan.picks.size)
+        assertTrue(plan.picks.isEmpty(), "selectors come from the saved picks, not the row")
     }
 
     @Test

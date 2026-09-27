@@ -182,7 +182,7 @@ private fun ServersList(
         if (profiles.isEmpty()) item { EmptyServers(onAdd) }
 
         // Quick pick: the fastest server right now.
-        val best = controller.bestServer()
+        val best = controller.bestServer()?.takeIf { it.mihomo == null }
         if (best != null && query.isBlank()) item {
             BestRow(best, pings[best.id]?.ms) { pick(best) }
         }
@@ -209,7 +209,17 @@ private fun ServersList(
                     collapsed = if (profile.id in collapsed) collapsed - profile.id else collapsed + profile.id
                 }
             }
-            if (profile.id !in collapsed) {
+            // A Clash profile is driven by its selectors (shown above): listing its proxies again
+            // as plain rows doubled everything and tapping a row bypassed the selectors.
+            val viaGroups = profile.mihomo != null && mihomoGroups.isNotEmpty() && query.isBlank()
+            if (viaGroups && profile.id !in collapsed) item(key = "viagroups:" + profile.id) {
+                Text(
+                    "Серверы этого профиля выбираются в группах выше",
+                    style = MaterialTheme.typography.bodySmall, color = c.ink3,
+                    modifier = Modifier.padding(start = listPad + 6.dp, top = 2.dp, bottom = 8.dp),
+                )
+            }
+            if (profile.id !in collapsed && !viaGroups) {
                 itemsIndexed(list, key = { _, it -> it.id }) { i, s ->
                     val animate = remember(s.id) { seen.add(s.id) && i < 12 }
                     ServerRow(s, s.id == selected, pings[s.id], s.id in pinging, s.id in favorites, controller, Modifier.appear(i, enabled = animate).animateItem()) { pick(s) }

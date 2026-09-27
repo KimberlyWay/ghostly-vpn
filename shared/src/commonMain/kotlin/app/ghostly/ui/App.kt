@@ -132,10 +132,30 @@ fun GhostlyApp(controller: GhostlyController) {
                     wide -> DesktopShell(controller, tab, { tab = it }, onAdd = { addOpen = true })
                     else -> {
                         val pad = PaddingValues(top = insets.calculateTopPadding() + 8.dp, bottom = insets.calculateBottomPadding() + 96.dp)
+                        // Back from another tab returns to Главная (the screen shrinks toward it while dragging);
+                        // only from Главная does back leave the app.
+                        var tabPeek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+                        app.ghostly.ui.components.PlatformBackHandler(
+                            enabled = tab != Tab.HOME && !addOpen && !pickerOpen,
+                            onProgress = { tabPeek = it },
+                            onCancel = { tabPeek = 0f },
+                            onBack = { tabPeek = 0f; tab = Tab.HOME },
+                        )
+                        // On Главная the first back only warns; a second one within 2 s leaves the app.
+                        var exitArmed by remember { mutableStateOf(false) }
+                        app.ghostly.ui.components.PlatformBackHandler(
+                            enabled = tab == Tab.HOME && !exitArmed && !addOpen && !pickerOpen,
+                            onBack = { exitArmed = true; toast = "Свайпните ещё раз, чтобы выйти" },
+                        )
+                        LaunchedEffect(exitArmed) { if (exitArmed) { delay(2000); exitArmed = false } }
                         AnimatedContent(
+                            modifier = Modifier.fillMaxSize().graphicsLayer {
+                                val k = 1f - 0.07f * tabPeek
+                                scaleX = k; scaleY = k
+                                alpha = 1f - 0.3f * tabPeek
+                            },
                             targetState = tab,
                             transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
-                            modifier = Modifier.fillMaxSize(),
                         ) { t ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {

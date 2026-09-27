@@ -112,8 +112,10 @@ object MihomoConfigBuilder {
         }
         cfg["rules"] = strings(userRules(settings, target) + rules)
 
-        val picks = if (server.mihomo != null) MihomoProfiles.selectPath(provided, server.name).map { (g, c) -> MihomoPick(g, c) } else emptyList()
-        return MihomoPlan(JsonObject(cfg), links = null, picks = picks)
+        // The profile's selectors decide (the user sets them up before connecting, MihomoGroups
+        // restores them on start). Steering to the tapped row here overrode them — e.g. «🧠 Умный
+        // выбор» was replaced by the first proxy on every connect.
+        return MihomoPlan(JsonObject(cfg), links = null, picks = emptyList())
     }
 
     // ------------------------------------------------------------------ link template

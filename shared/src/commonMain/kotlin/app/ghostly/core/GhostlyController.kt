@@ -45,6 +45,8 @@ private data class UiState(
     val onboarded: Boolean = false,
     /** Update version the user closed with ✕ — not offered again until a newer one appears. */
     val dismissedUpdate: String? = null,
+    /** mihomo selectors the user set, per Clash profile: profileId → (group → member). */
+    val mihomoPicks: Map<String, Map<String, String>> = emptyMap(),
 )
 
 class GhostlyController(
@@ -89,8 +91,28 @@ class GhostlyController(
     /** Server-tunable look (glow, parallax, seasonal accent, announcement) — changes without an app update. */
     val design = app.ghostly.core.design.RemoteDesign(store, "GhostlyVPN/${platform.appVersion} (${platform.os})")
 
-    /** Proxy groups (selectors) of the running mihomo core. */
-    val mihomoGroups = app.ghostly.core.mihomo.MihomoGroups(backend as? app.ghostly.core.mihomo.DualCoreBackend, scope) { _settings.value.pingUrl }
+    private val _mihomoPicks = MutableStateFlow(_ui.value.mihomoPicks)
+
+    /** The Clash profile whose selectors are shown: the selected server's, else the first one (mihomo core only). */
+    private val groupSource: StateFlow<app.ghostly.core.mihomo.GroupSource?> =
+        kotlinx.coroutines.flow.combine(_selected, _profiles, _settings) { sel, list, s ->
+            if (s.core != app.ghostly.core.model.CoreType.MIHOMO) return@combine null
+            val clash = list.filter { it.mihomo != null }
+            val p = clash.firstOrNull { pr -> pr.servers.any { it.id == sel } } ?: clash.firstOrNull()
+            p?.let { app.ghostly.core.mihomo.GroupSource(it.id, it.mihomo!!) }
+        }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+
+    /** Proxy groups (selectors) of the Clash profile: from its config before connecting, live while mihomo runs. */
+    val mihomoGroups = app.ghostly.core.mihomo.MihomoGroups(
+        backend as? app.ghostly.core.mihomo.DualCoreBackend, scope, { _settings.value.pingUrl },
+        groupSource, _mihomoPicks,
+    ) { profileId, group, member ->
+        _mihomoPicks.update { all -> all + (profileId to (all[profileId].orEmpty() + (group to member))) }
+        // A selector belongs to its profile: connecting must start that profile, not a server of another one.
+        val profile = _profiles.value.firstOrNull { it.id == profileId }
+        if (profile != null && profile.servers.none { it.id == _selected.value }) _selected.value = profile.servers.firstOrNull()?.id
+        saveUi()
+    }
 
     /** App self-update (our server first, GitHub mirror), verified by SHA-256. */
     val updater = app.ghostly.core.update.Updater(platform) { v -> v == dismissedUpdate }
@@ -809,7 +831,7 @@ class GhostlyController(
 
     private fun saveUi() = store.save(
         STATE, UiState.serializer(),
-        UiState(_selected.value, _favorites.value, _pings.value, _onboarded.value, dismissedUpdate),
+        UiState(_selected.value, _favorites.value, _pings.value, _onboarded.value, dismissedUpdate, _mihomoPicks.value),
     )
 
     private fun randomUser(): String = "ghostly_" + secureToken("abcdefghijkmnpqrstuvwxyz23456789", 6)

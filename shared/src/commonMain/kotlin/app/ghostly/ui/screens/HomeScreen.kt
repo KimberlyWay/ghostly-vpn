@@ -116,8 +116,20 @@ fun rememberHome(controller: GhostlyController): HomeModel {
     val pings by controller.pings.collectAsState()
     val pinging by controller.pinging.collectAsState()
 
-    val server = remember(selectedId, profiles) { controller.selectedServer() }
-    val profile = remember(server, profiles) { server?.let { controller.profileOf(it.id) } ?: profiles.firstOrNull() }
+    val groups by controller.mihomoGroups.groups.collectAsState()
+    val selected = remember(selectedId, profiles) { controller.selectedServer() }
+    val profile = remember(selected, profiles) { selected?.let { controller.profileOf(it.id) } ?: profiles.firstOrNull() }
+    // A Clash profile runs as a whole through its selectors: show what the main selector points at,
+    // not the first proxy of the list (which the core doesn't necessarily use).
+    val server = remember(selected, profile, groups) {
+        val cfg = profile?.mihomo
+        if (selected?.mihomo == null || cfg == null || groups.isEmpty()) selected
+        else {
+            val main = app.ghostly.core.mihomo.MihomoProfiles.matchTarget(cfg)
+            val g = groups.firstOrNull { it.name == main } ?: groups.first()
+            selected.copy(name = g.now ?: g.name, protocol = app.ghostly.core.model.MIHOMO_PROFILE, transport = "${groups.size}")
+        }
+    }
     val orb = when (state) {
         is VpnState.Connected -> OrbState.CONNECTED
         VpnState.Connecting, VpnState.Disconnecting -> OrbState.CONNECTING

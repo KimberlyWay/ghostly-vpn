@@ -66,6 +66,12 @@ object MihomoProfiles {
             name to ((g.str("type") ?: "select").lowercase() to members)
         }.toMap()
 
+    /** Groups marked `hidden: true` — the provider doesn't want them in the UI. */
+    fun hiddenGroups(cfg: JsonObject): Set<String> =
+        (cfg["proxy-groups"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .filter { (it["hidden"] as? JsonPrimitive)?.contentOrNull == "true" }
+            .mapNotNull { it.str("name") }.toSet()
+
     /** Target of the final `MATCH,<target>` rule — the group most traffic goes through. */
     fun matchTarget(cfg: JsonObject): String? =
         (cfg["rules"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
