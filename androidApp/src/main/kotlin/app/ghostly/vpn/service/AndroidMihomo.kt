@@ -64,6 +64,22 @@ object AndroidMihomo : MihomoCore {
     fun homeDir(context: Context) = File(context.filesDir, "clash")
     fun profileDir(context: Context) = File(homeDir(context), "ghostly")
 
+    /** One log per run, written by the service process, read (and appended to) by the app process. */
+    fun logFile(context: Context) = File(homeDir(context), "logs/core.log")
+
+    /** App-process lines land in the same file: short appends survive the cross-process sharing. */
+    private fun log(line: String) {
+        runCatching {
+            val f = logFile(app)
+            f.parentFile?.mkdirs()
+            f.appendText(java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date()) + " [app] " + line + "\n")
+        }
+    }
+
+    override suspend fun coreLogs(): String? = withContext(Dispatchers.IO) {
+        runCatching { logFile(app).takeIf { it.isFile }?.readText()?.takeLast(64_000)?.takeIf { it.isNotBlank() } }.getOrNull()
+    }
+
     fun init(context: Context) {
         app = context.applicationContext
         ContextCompat.registerReceiver(app, object : BroadcastReceiver() {
@@ -124,8 +140,11 @@ object AndroidMihomo : MihomoCore {
                     // The core answers once the config is applied; normally right away.
                     var tries = 0
                     while (!client.ready() && tries++ < 50) delay(100)
-                    client.applyPicks(p.picks)
+                    log(if (tries >= 50) "controller NOT ready on 127.0.0.1:${p.controller} after ${tries * 100} ms" else "controller ready after ~${tries * 100} ms")
+                    val applied = client.applyPicks(p.picks)
+                    log("applyPicks(${p.picks.size}): " + (if (applied) "ok" else "FAILED") + " " + p.picks.joinToString { pk -> "${pk.group}→${pk.choice ?: "${pk.provider}#${pk.providerIndex}"}" })
                     version = client.version()
+                    log("core version: $version")
                     api = client
                     appPort = p.appPort
                     mutableTraffic.value = Traffic()

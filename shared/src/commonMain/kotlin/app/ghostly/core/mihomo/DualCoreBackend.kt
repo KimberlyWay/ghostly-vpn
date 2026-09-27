@@ -25,6 +25,9 @@ interface MihomoCore : VpnBackend {
     /** [stored] is the user's saved selector choices (group → member) for the profile. */
     suspend fun connect(server: Server, profile: Profile?, settings: AppSettings, stored: Map<String, String> = emptyMap())
 
+    /** The core's log of the last run (for support), newest lines last; null when there is none. */
+    suspend fun coreLogs(): String? = null
+
     /** Real latency of Clash-profile proxies (they can't go through Xray); defaults to "unknown". */
     suspend fun pingProfile(servers: List<Server>, profile: Profile, url: String, onResult: (String, Long) -> Unit) {
         servers.forEach { onResult(it.id, -1) }

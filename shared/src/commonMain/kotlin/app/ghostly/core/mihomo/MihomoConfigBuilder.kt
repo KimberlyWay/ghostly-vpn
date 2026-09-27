@@ -123,7 +123,7 @@ object MihomoConfigBuilder {
         // The user's saved selector choices win; the selected server only fills groups they never touched.
         val groups = MihomoProfiles.groups(provided)
         val storedPicks = stored.mapNotNull { (g, c) ->
-            val members = groups[g]?.takeIf { it.first == "select" }?.second ?: return@mapNotNull null
+            val members = groups[g]?.takeIf { it.type == "select" }?.members ?: return@mapNotNull null
             if (c in members) MihomoPick(g, c) else null
         }
         val derived = if (server.mihomo != null) MihomoProfiles.selectPath(provided, server.name).map { (g, c) -> MihomoPick(g, c) } else emptyList()
