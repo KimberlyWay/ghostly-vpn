@@ -50,6 +50,10 @@ class MihomoTest {
             proxies: ["🇩🇪 Germany", "🇳🇱 NL"]
             url: https://www.gstatic.com/generate_204
             interval: 300
+          - name: PROXY
+            type: select
+            hidden: true
+            proxies: ["🇩🇪 Germany", "🇳🇱 NL"]
         rules:
           - GEOSITE,category-ru,DIRECT
           - MATCH,Proxy
@@ -76,6 +80,14 @@ class MihomoTest {
     fun selectPathGoesThroughNestedSelectors() {
         val cfg = SubscriptionParser.parse(yaml, emptyMap(), "p1").mihomo!!
         assertEquals(listOf("Proxy" to "Europe", "Europe" to "🇳🇱 NL"), MihomoProfiles.selectPath(cfg, "🇳🇱 NL"))
+    }
+
+    @Test
+    fun hiddenGroupsAreMarked() {
+        val cfg = SubscriptionParser.parse(yaml, emptyMap(), "p1").mihomo!!
+        val groups = MihomoProfiles.groups(cfg)
+        assertTrue(groups.getValue("PROXY").hidden)
+        assertTrue(groups.filterValues { !it.hidden }.keys == setOf("Proxy", "Europe", "Auto"))
     }
 
     @Test

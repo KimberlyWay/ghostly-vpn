@@ -66,6 +66,9 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
         private set
     private val log = ArrayDeque<String>()
 
+    override suspend fun coreLogs(): String? =
+        synchronized(log) { log.toList() }.takeIf { it.isNotEmpty() }?.joinToString("\n")
+
     /** mihomo's home: config, provider files, geo data, cache. */
     private val home: File get() = File(platform.dataDir, "mihomo").apply { mkdirs() }
 

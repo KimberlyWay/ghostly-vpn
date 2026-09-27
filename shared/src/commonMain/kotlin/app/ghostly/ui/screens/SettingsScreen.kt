@@ -674,6 +674,10 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(bottom = 12.dp))
         Group {
             SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
+            SettingRow(
+                "Логи mihomo", "Скопировать журнал последнего запуска ядра", Icons.Rounded.ContentCopy,
+                onClick = { controller.haptic(); controller.copyMihomoLogs() },
+            ) { Chevron() }
             if (controller.platform.updateAsset != null) {
                 val last by controller.updater.lastCheck.collectAsState()
                 SettingRow("Проверить обновления", last ?: "Скачиваются с нашего сервера и проверяются по SHA-256", Icons.Rounded.Refresh, onClick = { controller.checkUpdates(manual = true) }) { Chevron() }

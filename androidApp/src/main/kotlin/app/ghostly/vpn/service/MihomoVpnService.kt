@@ -41,6 +41,35 @@ class MihomoVpnService : VpnService() {
     private var running = false
     private var serverName = ""
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var logWriter: java.io.PrintWriter? = null
+    private var logcatJob: kotlinx.coroutines.Job? = null
+
+    // ------------------------------------------------------------------ core log
+    // Everything the core and this service do lands in files/clash/logs/core.log, one file per
+    // start, so the app can show/copy it when mihomo misbehaves (the :mihomo process dies with the
+    // tunnel and takes stdout with it — a file is the only trace that survives).
+
+    private val logTime = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+
+    @Synchronized
+    private fun log(line: String) {
+        Log.i(TAG, line)
+        runCatching { logWriter?.apply { println(logTime.format(java.util.Date()) + " " + line); flush() } }
+    }
+
+    private fun startLog() {
+        runCatching {
+            val f = AndroidMihomo.logFile(this)
+            f.parentFile?.mkdirs()
+            synchronized(this) {
+                logWriter?.close()
+                logWriter = java.io.PrintWriter(java.io.FileWriter(f, false))
+            }
+        }
+        if (logcatJob == null) logcatJob = scope.launch {
+            for (m in Clash.subscribeLogcat()) log("[${m.level.name.lowercase()}] ${m.message}")
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -58,11 +87,13 @@ class MihomoVpnService : VpnService() {
 
     private suspend fun start(intent: Intent) = lock.withLock {
         try {
+            startLog()
             if (running) runCatching { Clash.stopTun() }
             val mtu = intent.getIntExtra(EXTRA_MTU, 1500)
             val ipv6 = intent.getBooleanExtra(EXTRA_IPV6, false)
             val split = runCatching { SplitMode.valueOf(intent.getStringExtra(EXTRA_SPLIT_MODE) ?: "") }.getOrDefault(SplitMode.OFF)
             val apps = intent.getStringArrayExtra(EXTRA_SPLIT_APPS).orEmpty()
+            log("start: server=$serverName mtu=$mtu ipv6=$ipv6 split=$split apps=${apps.size}")
 
             // The bridge erases external-controller from the profile itself (patchExternalController
             // in Prizrak-Box's config processor) — the controller only survives through the override
@@ -76,12 +107,16 @@ class MihomoVpnService : VpnService() {
                     com.github.kr328.clash.core.model.ConfigurationOverride().apply {
                         externalController = "127.0.0.1:$controller"
                         this.secret = secret
+                        // The core's own lines (config, rules, dials) are the diagnostics we keep.
+                        logLevel = com.github.kr328.clash.core.model.LogMessage.Level.Info
                     },
                 )
-            }
+                log("controller override set: 127.0.0.1:$controller")
+            } else log("no controller port in intent — REST API will be down")
 
             // Config first: a broken profile fails here, before the VPN takes over the network.
             Clash.load(AndroidMihomo.profileDir(this)).await()
+            log("config loaded from ${AndroidMihomo.profileDir(this)}")
 
             val builder = Builder()
                 .setSession("Ghostly · $serverName")
@@ -125,10 +160,12 @@ class MihomoVpnService : VpnService() {
             )
             running = true
             watchNetwork()
+            log("tun up (fd=$fd), reporting connected")
             report(STATE_CONNECTED)
             updateNotification("mihomo")
         } catch (e: Throwable) {
             Log.e(TAG, "start failed", e)
+            log("start failed: " + Log.getStackTraceString(e))
             report(STATE_FAILED, e.message?.takeIf { it.isNotBlank() }?.let { "mihomo: $it" } ?: "mihomo не запустился")
             shutdown()
         }
@@ -141,6 +178,7 @@ class MihomoVpnService : VpnService() {
 
     /** Stop the core and end the process: the next start loads a fresh one. */
     private fun shutdown() {
+        log("shutdown")
         networkCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         networkCallback = null
         if (running) {
@@ -148,6 +186,7 @@ class MihomoVpnService : VpnService() {
             runCatching { Clash.reset() }
         }
         runCatching { Clash.clearOverride(Clash.OverrideSlot.Session) }
+        synchronized(this) { runCatching { logWriter?.close() }; logWriter = null }
         running = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()

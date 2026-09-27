@@ -58,12 +58,19 @@ object MihomoProfiles {
         )
     }
 
-    /** Groups as name → members (only `proxies:`; members from `use:` providers are not known before start). */
-    fun groups(cfg: JsonObject): Map<String, Pair<String, List<String>>> =
+    /** One `proxy-groups:` entry: type, `proxies:` members, and whether the config hides it from pickers. */
+    data class GroupDef(val type: String, val members: List<String>, val hidden: Boolean)
+
+    /** Groups as name → [GroupDef] (only `proxies:`; members from `use:` providers are not known before start). */
+    fun groups(cfg: JsonObject): Map<String, GroupDef> =
         (cfg["proxy-groups"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.mapNotNull { g ->
             val name = g.str("name") ?: return@mapNotNull null
             val members = (g["proxies"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            name to ((g.str("type") ?: "select").lowercase() to members)
+            name to GroupDef(
+                type = (g.str("type") ?: "select").lowercase(),
+                members = members,
+                hidden = g["hidden"]?.jsonPrimitive?.contentOrNull == "true",
+            )
         }.toMap()
 
     /** Target of the final `MATCH,<target>` rule — the group most traffic goes through. */
@@ -78,9 +85,9 @@ object MihomoProfiles {
      */
     fun selectPath(cfg: JsonObject, proxy: String): List<Pair<String, String>> {
         val groups = groups(cfg)
-        val selectable = groups.filterValues { it.first == "select" }
+        val selectable = groups.filterValues { it.type == "select" }
         fun dfs(group: String, seen: Set<String>): List<Pair<String, String>>? {
-            val members = groups[group]?.second ?: return null
+            val members = groups[group]?.members ?: return null
             if (group !in selectable) return null
             if (proxy in members) return listOf(group to proxy)
             for (m in members) {

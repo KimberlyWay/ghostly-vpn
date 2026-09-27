@@ -99,6 +99,18 @@ class GhostlyController(
     /** App self-update (our server first, GitHub mirror), verified by SHA-256. */
     val updater = app.ghostly.core.update.Updater(platform) { v -> v == dismissedUpdate }
 
+    /** Copies the mihomo core's log of the last run to the clipboard (for a support message). */
+    fun copyMihomoLogs() {
+        scope.launch(Dispatchers.IO) {
+            val logs = (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.mihomo?.coreLogs()
+            if (logs == null) _events.emit("Журнал пуст — сначала попробуй подключиться с ядром mihomo")
+            else {
+                platform.copyToClipboard(logs)
+                _events.emit("Журнал mihomo скопирован — вставь его в чат поддержки")
+            }
+        }
+    }
+
     fun dismissUpdate() {
         dismissedUpdate = updater.offer.value?.version
         updater.hide()
@@ -478,8 +490,11 @@ class GhostlyController(
         val provided = profile.mihomo
         if (provided != null) {
             val groups = app.ghostly.core.mihomo.MihomoProfiles.groups(provided)
-            return groups.map { (name, g) ->
-                val (type, members) = g
+            // Groups the config marks `hidden: true` work under the hood (through the visible groups'
+            // selectors) but never show as rows, like mihomo's own clients draw it.
+            return groups.filterValues { !it.hidden }.map { (name, g) ->
+                val type = g.type
+                val members = g.members
                 app.ghostly.core.mihomo.ProxyGroupInfo(
                     name = name,
                     type = when (type) {

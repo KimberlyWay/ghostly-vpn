@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -105,6 +106,8 @@ class HomeModel(
     val now: Long,
     val down: SnapshotStateList<Float>,
     val up: SnapshotStateList<Float>,
+    /** mihomo: how many selector groups drive the traffic (0 when Xray or none). */
+    val mihomoGroups: Int,
 )
 
 @Composable
@@ -115,6 +118,8 @@ fun rememberHome(controller: GhostlyController): HomeModel {
     val profiles by controller.profiles.collectAsState()
     val pings by controller.pings.collectAsState()
     val pinging by controller.pinging.collectAsState()
+    val liveGroups by controller.mihomoGroups.groups.collectAsState()
+    val staticGroups by controller.staticMihomoGroups.collectAsState()
 
     val server = remember(selectedId, profiles) { controller.selectedServer() }
     val profile = remember(server, profiles) { server?.let { controller.profileOf(it.id) } ?: profiles.firstOrNull() }
@@ -133,7 +138,10 @@ fun rememberHome(controller: GhostlyController): HomeModel {
     LaunchedEffect(orb) { if (orb != OrbState.CONNECTED) { down.clear(); up.clear() } }
     var now by remember { mutableLongStateOf(GhostlyController.now()) }
     LaunchedEffect(Unit) { while (true) { now = GhostlyController.now(); delay(1000) } }
-    return HomeModel(state, orb, traffic, server, profile, pings[server?.id]?.ms, server?.id in pinging, now, down, up)
+    return HomeModel(
+        state, orb, traffic, server, profile, pings[server?.id]?.ms, server?.id in pinging, now, down, up,
+        mihomoGroups = liveGroups.ifEmpty { staticGroups }.size,
+    )
 }
 
 // ============================================================================ phone
@@ -397,6 +405,31 @@ private fun StatTile(icon: ImageVector, label: String, value: String, color: Col
 fun ServerCard(m: HomeModel, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val c = Ghost.colors
     val server = m.server
+    // mihomo: the selectors decide where the traffic goes, so the card leads straight to them
+    // instead of naming one pinned server.
+    if (m.mihomoGroups > 0) {
+        GlassCard(modifier.fillMaxWidth(), onClick = onClick, strong = true) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(46.dp).clip(RoundedCornerShape(46.dp * 0.34f))
+                        .background(Brush.linearGradient(listOf(c.accent.copy(alpha = 0.26f), c.accent2.copy(alpha = 0.12f)))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.AccountTree, null, tint = c.accent, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Селекторы", style = MaterialTheme.typography.labelSmall, color = c.ink3)
+                    Text("Выбор через селекторы", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Группы решают, куда идёт трафик", style = MaterialTheme.typography.bodySmall, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text("${m.mihomoGroups}", style = MaterialTheme.typography.labelMedium, color = c.ink3, modifier = Modifier.padding(horizontal = 4.dp))
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = c.ink3)
+            }
+        }
+        return
+    }
     GlassCard(modifier.fillMaxWidth(), onClick = onClick, strong = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ServerAvatar(server, 46.dp)
