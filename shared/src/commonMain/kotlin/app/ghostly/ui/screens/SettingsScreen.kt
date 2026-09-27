@@ -306,11 +306,15 @@ private fun MainSettings(controller: GhostlyController, contentPadding: PaddingV
                 }
             }
             ToggleRow("Меньше анимаций", "Спокойнее и экономнее для батареи", s.reduceMotion, Icons.Rounded.Animation) { v -> set { it.copy(reduceMotion = v) } }
-            if (controller.platform.stage != null) {
+            controller.platform.stage?.let { stage ->
                 ToggleRow(
-                    "Сцена", "Призрак подпевает музыке, которая играет на компьютере, а интерфейс светится и движется в её ритме и настроении",
+                    "Сцена", "Призрак подпевает музыке, которая играет ${stage.whereLabel}, а интерфейс светится и движется в её ритме и настроении",
                     s.stageMode, Icons.Rounded.MusicNote,
-                ) { v -> set { it.copy(stageMode = v) } }
+                ) { v -> set { it.copy(stageMode = v) }; if (v) stage.requestSetup() }
+                val need by stage.setupNeeded.collectAsState()
+                if (s.stageMode && need != null) {
+                    SettingRow("Дать доступ для сцены", need, Icons.Rounded.MusicNote, onClick = { stage.requestSetup() }) { Chevron() }
+                }
             }
             if (!controller.platform.isDesktop) {
                 ToggleRow("Вибрация", "Лёгкий отклик на нажатия", s.haptics, Icons.Rounded.Vibration) { v -> set { it.copy(haptics = v) } }
