@@ -14,18 +14,18 @@ import app.ghostly.vpn.R
 
 /**
  * The ongoing VPN notification, shared by the Xray and mihomo services: header = core with a
- * running connection timer, body = live speed, expanded = session traffic too; the core shows as a
- * badge on the right. With Xray the title is the server and the subscription joins the header.
- * With Mihomo traffic goes through the selectors (each may point at another country), so the
- * title is the subscription itself.
+ * running connection timer, body = live speed, expanded = session traffic too; the core's logo
+ * shows as a badge on the right. With Xray the title is the server and the subscription is a line
+ * of its own. With Mihomo traffic goes through the selectors (each may point at another country),
+ * so the title is the subscription itself.
  */
 internal object VpnNotification {
 
     const val CHANNEL = "vpn"
 
-    enum class Core(val label: String, val color: Int, val glyph: Int) {
-        XRAY("Xray", 0xFF4F7BFF.toInt(), R.drawable.ic_core_xray),
-        MIHOMO("Mihomo", 0xFFB36BFF.toInt(), R.drawable.ic_core_mihomo),
+    enum class Core(val label: String, val logo: Int) {
+        XRAY("Xray", R.drawable.ic_core_xray),
+        MIHOMO("Mihomo", R.drawable.ic_core_mihomo),
     }
 
     class Stats(val up: Long, val down: Long, val upTotal: Long, val downTotal: Long)
@@ -53,12 +53,12 @@ internal object VpnNotification {
         stop: PendingIntent,
         status: String? = null,
     ): Notification {
-        val speed = stats?.let { "↓ ${speed(it.down)}   ↑ ${speed(it.up)}" }
+        val speed = stats?.let { "↓ ${speed(it.down)}  ·  ↑ ${speed(it.up)}" }
         val text = status ?: speed ?: context.getString(R.string.notif_connected)
         val sub = subscription?.takeIf { it.isNotBlank() }
         val bySubscription = core == Core.MIHOMO && sub != null
         val title = sub?.takeIf { bySubscription } ?: server.ifEmpty { context.getString(R.string.app_name) }
-        val header = if (bySubscription) core.label else listOfNotNull(sub, core.label).joinToString(" · ")
+        val header = core.label
         val b = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_ghost)
             .setColor(0xFFA88DFF.toInt())
@@ -77,9 +77,8 @@ internal object VpnNotification {
             b.setWhen(connectedAt).setShowWhen(true).setUsesChronometer(true)
             val lines = listOfNotNull(
                 text,
-                stats?.let { "За сессию: ↓ ${bytes(it.downTotal)}  ↑ ${bytes(it.upTotal)}" },
-                if (bySubscription) "Ядро: ${core.label} · маршруты по селекторам"
-                else listOfNotNull(sub?.let { "Подписка: $it" }, "Ядро: ${core.label}").joinToString(" · "),
+                stats?.let { "За сессию ↓ ${bytes(it.downTotal)}  ·  ↑ ${bytes(it.upTotal)}" },
+                sub?.takeIf { !bySubscription }?.let { "Подписка $it" },
             )
             b.setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
         } else {
@@ -90,15 +89,21 @@ internal object VpnNotification {
 
     private val badges = HashMap<Core, Bitmap>()
 
-    /** A round coloured badge with the core's glyph, drawn once per core. */
+    /** The core's logo in white on the app's violet gradient, drawn once per core. */
     private fun badge(context: Context, core: Core): Bitmap = synchronized(badges) {
         badges.getOrPut(core) {
             val size = (48 * context.resources.displayMetrics.density).toInt().coerceAtLeast(96)
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
-            canvas.drawCircle(size / 2f, size / 2f, size / 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = core.color })
-            ContextCompat.getDrawable(context, core.glyph)?.mutate()?.let { d ->
-                val inset = (size * 0.24f).toInt()
+            val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = android.graphics.LinearGradient(
+                    0f, 0f, size.toFloat(), size.toFloat(),
+                    0xFF6A4BDB.toInt(), 0xFFA88DFF.toInt(), android.graphics.Shader.TileMode.CLAMP,
+                )
+            }
+            canvas.drawCircle(size / 2f, size / 2f, size / 2f, fill)
+            ContextCompat.getDrawable(context, core.logo)?.mutate()?.let { d ->
+                val inset = (size * 0.22f).toInt()
                 d.setBounds(inset, inset, size - inset, size - inset)
                 d.draw(canvas)
             }
