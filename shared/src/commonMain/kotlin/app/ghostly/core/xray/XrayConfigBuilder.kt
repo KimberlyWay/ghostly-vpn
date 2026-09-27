@@ -101,7 +101,7 @@ object XrayConfigBuilder {
         val outbounds: List<JsonObject> = when {
             server.outbound != null -> listOf(server.outbound)
             server.config != null -> {
-                if (server.isAuto) return null
+                // A balancer config is measured through its main proxy — an estimate, but better than "нет".
                 val all = (server.config["outbounds"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
                 val main = all.firstOrNull { tag(it) == PROXY } ?: all.firstOrNull() ?: return null
                 listOf(main) + all.filter { it !== main }

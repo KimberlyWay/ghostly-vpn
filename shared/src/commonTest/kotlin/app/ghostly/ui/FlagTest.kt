@@ -17,6 +17,22 @@ class FlagTest {
     }
 }
 
+class ServerTitleTest {
+    private fun titled(name: String) = app.ghostly.core.model.Server(id = "s", name = name, protocol = "vless").title()
+
+    @Test
+    fun iconTakesFirstFlagAnywhere() {
+        // Leading flag, as before.
+        assertEquals("🇳🇱", titled("🇳🇱 Амстердам").flag)
+        // Flag after the words (Happ-style names): still the icon, removed from the title text.
+        val t = titled("Автовыбор 🇪🇺 🤝🇷🇺")
+        assertEquals("🇪🇺", t.flag)
+        assertEquals("Автовыбор 🤝🇷🇺", t.title)
+        // No flag at all.
+        assertNull(titled("Просто сервер").flag)
+    }
+}
+
 class FlagPairTest {
     @Test
     fun findsFlagsAnywhere() {
