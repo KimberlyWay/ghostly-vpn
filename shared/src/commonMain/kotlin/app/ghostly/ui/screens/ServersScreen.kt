@@ -147,6 +147,8 @@ private fun ServersList(
     var query by rememberSaveable { mutableStateOf("") }
     // One list, not two: rows already offered inside the mihomo groups don't repeat below (search still finds them).
     val groupMembers = if (query.isBlank()) mihomoGroups.flatMap { it.members }.toSet() else emptySet()
+    // Selectors belong to the subscription the core runs; they are drawn under its header.
+    val activeId = (profiles.firstOrNull { p -> p.servers.any { it.id == selected } } ?: profiles.firstOrNull())?.id
     var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     // Rows animate in once; after that (scrolling back, recycling) they just appear.
@@ -198,13 +200,6 @@ private fun ServersList(
             item { BestRow(best, pings[best.id]?.ms) { pick(best) } }
         }
 
-        if (query.isBlank()) proxyGroups(
-            mihomoGroups, openGroups, groupsTesting, listPad,
-            onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
-            onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
-            onTest = { g -> controller.haptic(); controller.testGroup(g) },
-        )
-
         val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) && it.name !in groupMembers }
         if (favs.isNotEmpty()) {
             item { GroupLabel("Избранное", Icons.Rounded.Star) }
@@ -214,10 +209,22 @@ private fun ServersList(
         }
 
         profiles.forEach { profile ->
-            val list = sorted(profile.servers.filter { matches(it) && it.name !in groupMembers })
+            val active = profile.id == activeId
+            val list = sorted(profile.servers.filter { matches(it) && !(active && it.name in groupMembers) })
             item(key = "profile:" + profile.id) {
                 ProfileHeader(profile, profile.id in collapsed, profile.id in refreshing, controller) {
                     collapsed = if (profile.id in collapsed) collapsed - profile.id else collapsed + profile.id
+                }
+            }
+            if (profile.id !in collapsed && query.isBlank()) {
+                if (active) proxyGroups(
+                    mihomoGroups, openGroups, groupsTesting, listPad,
+                    onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
+                    onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
+                    onTest = { g -> controller.haptic(); controller.testGroup(g) },
+                )
+                else if (profile.mihomo != null && mihomoGroups.isNotEmpty()) item(key = "switch:" + profile.id) {
+                    SwitchHint { controller.haptic(); controller.switchProfile(profile.id) }
                 }
             }
             if (profile.id !in collapsed) {
@@ -327,6 +334,22 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
                     onClick = { menu = false; controller.deleteProfile(profile.id) })
             }
         }
+    }
+}
+
+/** Another Clash subscription: its selectors appear once it is the active one. */
+@Composable
+private fun SwitchHint(onSwitch: () -> Unit) {
+    val c = Ghost.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.04f))
+            .pointerHoverIcon(PointerIcon.Hand).clickable(onClick = onSwitch).padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Селекторы этой подписки появятся, когда она станет активной", style = MaterialTheme.typography.bodySmall, color = c.ink3, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        Text("Сделать активной", style = MaterialTheme.typography.labelMedium, color = c.accent)
     }
 }
 

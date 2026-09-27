@@ -485,9 +485,17 @@ class GhostlyController(
         mihomoGroups.select(group, member)
     }
 
+    /** The subscription the core runs: the one holding the selected server, else the first. */
+    private fun activeOf(list: List<Profile>, selected: String?): Profile? =
+        list.firstOrNull { p -> p.servers.any { it.id == selected } } ?: list.firstOrNull()
+
+    /** The active subscription (see [activeOf]); its selectors are the ones drawn and applied. */
+    fun activeProfile(): Profile? = activeOf(visibleProfiles(), _selected.value)
+
     /** The visible profile a selector belongs to: by its groups for Clash profiles, the link profile otherwise. */
     private fun groupOwner(group: String): Profile? {
-        val visible = visibleProfiles()
+        // Same group names ("Авто", "Выбор") can exist in several subscriptions: the active one wins.
+        val visible = visibleProfiles().let { all -> listOfNotNull(activeProfile()) + all.filter { it.id != activeProfile()?.id } }
         visible.firstOrNull { p -> p.mihomo?.let { group in app.ghostly.core.mihomo.MihomoProfiles.groups(it).keys } == true }?.let { return it }
         val links = visible.filter { it.mihomo == null && it.servers.any { s -> s.link != null && s.config == null } }
         return links.firstOrNull { p -> p.servers.any { it.id == _selected.value } } ?: links.firstOrNull()
@@ -499,10 +507,10 @@ class GhostlyController(
      */
     val staticMihomoGroups: StateFlow<List<app.ghostly.core.mihomo.ProxyGroupInfo>> by lazy {
         kotlinx.coroutines.flow.combine(profiles, _mihomoPicks, _selected, _pings, _settings) { list, picks, selected, pings, s ->
+            // Only the active subscription runs on the core, so only its selectors are shown:
+            // two Clash subscriptions must not glue their groups into one list.
             if (s.core != app.ghostly.core.model.CoreType.MIHOMO) emptyList()
-            else buildList {
-                list.forEach { p -> addAll(staticGroups(p, picks[p.id] ?: emptyMap(), selected, pings)) }
-            }
+            else activeOf(list, selected)?.let { p -> staticGroups(p, picks[p.id] ?: emptyMap(), selected, pings) }.orEmpty()
         }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
     }
 
