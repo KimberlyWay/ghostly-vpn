@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -62,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -165,12 +166,8 @@ fun GhostlyApp(controller: GhostlyController) {
             // Music on the PC: the whole composition plays along (dimming, rim lights, drop flash, sparks).
             stage?.let { app.ghostly.ui.stage.StageOverlay(it) }
 
-            // Server picker: our own sheet, not Material's ModalBottomSheet. That one opened half-way
-            // and shared every vertical swipe between dragging itself and scrolling the list (the list
-            // "sometimes scrolls, sometimes not"), and its dialog window could swallow the next tap.
-            // Here the list owns all scrolling; only the handle drags the sheet down.
-            PickerSheet(pickerOpen, onClose = { pickerOpen = false }) {
-                Text("Выбор сервера", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 22.dp))
+            // Server picker: our own sheet (see PickerSheet for why not ModalBottomSheet).
+            PickerSheet(pickerOpen, onClose = { pickerOpen = false }, title = "Выбор сервера") {
                 ServersScreen(
                     controller, PaddingValues(bottom = insets.calculateBottomPadding() + 24.dp),
                     onAdd = { pickerOpen = false; addOpen = true },
@@ -216,54 +213,124 @@ fun GhostlyApp(controller: GhostlyController) {
 
 // ---------------------------------------------------------------------------- picker sheet
 
-/** Bottom sheet over the whole app: scrim, a tall panel sliding up, back gesture and a drag-down handle close it. */
+/**
+ * Bottom sheet over the whole app, shaped like Material's: opens half-way, a swipe up on the list
+ * first raises it to full height, a swipe down with the list at its top pulls it down or closes it.
+ *
+ * Our own instead of ModalBottomSheet because that one kept the fling of a swipe that moved the
+ * sheet — the list "sometimes scrolled, sometimes not" — and its dialog window could swallow the
+ * next tap. Here a swipe moves the sheet only while the sheet actually has somewhere to go; once it
+ * is up, every swipe and fling belongs to the list.
+ */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun BoxScope.PickerSheet(
     open: Boolean,
     onClose: () -> Unit,
+    title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     androidx.compose.ui.backhandler.BackHandler(enabled = open, onBack = onClose)
-    AnimatedVisibility(open, enter = fadeIn(Motion.quick(220)), exit = fadeOut(Motion.quick(180)), modifier = Modifier.matchParentSize()) {
+    var shown by remember { mutableStateOf(false) }
+    BoxWithConstraints(Modifier.matchParentSize()) {
+        val screen = constraints.maxHeight.toFloat()
+        val full = screen * 0.92f           // panel height; offset 0 = fully up
+        val half = full - screen * 0.58f    // offset of the half-open state
+        val hidden = full                   // offset that puts the panel below the screen
+        var off by remember { mutableFloatStateOf(hidden) }
+        val scope = rememberCoroutineScope()
+        var settling by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+        fun animateTo(target: Float, then: () -> Unit = {}) {
+            settling?.cancel()
+            settling = scope.launch {
+                androidx.compose.animation.core.animate(off, target, animationSpec = androidx.compose.animation.core.spring(stiffness = 500f)) { v, _ -> off = v }
+                then()
+            }
+        }
+        fun settle(velocity: Float) {
+            val target = when {
+                velocity > 1400f -> if (off < half - 1f) half else hidden
+                velocity < -1400f -> 0f
+                off > half + (hidden - half) * 0.4f -> hidden
+                off > half / 2 -> half
+                else -> 0f
+            }
+            if (target == hidden) onClose() else animateTo(target)
+        }
+        LaunchedEffect(open) {
+            if (open) {
+                shown = true
+                off = hidden
+                animateTo(half)
+            } else if (shown) {
+                animateTo(hidden) { shown = false }
+            }
+        }
+        if (!shown) return@BoxWithConstraints
+
+        // The sheet takes the part of a swipe it can use and hands the rest to the list.
+        val connection = remember(half, hidden) {
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                var moved = false
+                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    val dy = available.y
+                    if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || dy >= 0f || off <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    settling?.cancel()
+                    val next = (off + dy).coerceAtLeast(0f)
+                    val used = next - off
+                    off = next
+                    moved = true
+                    return androidx.compose.ui.geometry.Offset(0f, used)
+                }
+                override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    val dy = available.y
+                    if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || dy <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    settling?.cancel()
+                    off = (off + dy).coerceAtMost(hidden)
+                    moved = true
+                    return androidx.compose.ui.geometry.Offset(0f, dy)
+                }
+                override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                    if (!moved) return androidx.compose.ui.unit.Velocity.Zero
+                    moved = false
+                    val wasUp = off <= 0.5f
+                    settle(available.y)
+                    // Sheet reached the top during this swipe: the rest of the fling scrolls the list.
+                    return if (wasUp && available.y < 0f) androidx.compose.ui.unit.Velocity.Zero else available
+                }
+            }
+        }
+
         Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
+            Modifier.fillMaxSize().graphicsLayer { alpha = (1f - off / hidden).coerceIn(0f, 1f) }
+                .background(Color.Black.copy(alpha = 0.55f))
                 .clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
         )
-    }
-    AnimatedVisibility(
-        open,
-        enter = slideInVertically(Motion.quick(320)) { it },
-        exit = slideOutVertically(Motion.quick(220)) { it },
-        modifier = Modifier.align(Alignment.BottomCenter),
-    ) {
-        val scope = rememberCoroutineScope()
-        val drag = remember { androidx.compose.animation.core.Animatable(0f) }
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        val closeAt = with(density) { 120.dp.toPx() }
         Column(
-            Modifier.widthIn(max = 620.dp).fillMaxWidth()
-                .fillMaxHeight(0.92f)
-                .graphicsLayer { translationY = drag.value }
+            Modifier.align(Alignment.BottomCenter).widthIn(max = 620.dp).fillMaxWidth()
+                .height(with(androidx.compose.ui.platform.LocalDensity.current) { full.toDp() })
+                .graphicsLayer { translationY = off }
                 .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .background(Color(0xFF110C1A))
                 // Taps on the panel itself must not fall through to the scrim.
-                .clickable(remember { MutableInteractionSource() }, null) {},
+                .clickable(remember { MutableInteractionSource() }, null) {}
+                .nestedScroll(connection),
         ) {
-            Box(
-                Modifier.fillMaxWidth().height(34.dp).draggable(
+            // Handle and title drag the sheet directly.
+            Column(
+                Modifier.fillMaxWidth().draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { d ->
-                        scope.launch { drag.snapTo((drag.value + d).coerceAtLeast(0f)) }
+                        settling?.cancel()
+                        off = (off + d).coerceIn(0f, hidden)
                     },
-                    onDragStopped = { v ->
-                        if (drag.value > closeAt || v > 1800f) onClose()
-                        else drag.animateTo(0f, Motion.bouncy())
-                    },
+                    onDragStopped = { v -> settle(v) },
                 ),
-                contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.28f)))
+                Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.28f)))
+                }
+                Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = 22.dp, end = 22.dp, bottom = 4.dp))
             }
             content()
         }
