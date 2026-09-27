@@ -26,6 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -144,6 +147,8 @@ private fun ServersList(
     var query by rememberSaveable { mutableStateOf("") }
     // One list, not two: rows already offered inside the mihomo groups don't repeat below (search still finds them).
     val groupMembers = if (query.isBlank()) mihomoGroups.flatMap { it.members }.toSet() else emptySet()
+    // Selectors belong to the subscription the core runs; they are drawn under its header.
+    val activeId = (profiles.firstOrNull { p -> p.servers.any { it.id == selected } } ?: profiles.firstOrNull())?.id
     var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     // Rows animate in once; after that (scrolling back, recycling) they just appear.
@@ -195,13 +200,6 @@ private fun ServersList(
             item { BestRow(best, pings[best.id]?.ms) { pick(best) } }
         }
 
-        if (query.isBlank()) proxyGroups(
-            mihomoGroups, openGroups, groupsTesting, listPad,
-            onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
-            onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
-            onTest = { g -> controller.haptic(); controller.testGroup(g) },
-        )
-
         val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) && it.name !in groupMembers }
         if (favs.isNotEmpty()) {
             item { GroupLabel("Избранное", Icons.Rounded.Star) }
@@ -211,10 +209,22 @@ private fun ServersList(
         }
 
         profiles.forEach { profile ->
-            val list = sorted(profile.servers.filter { matches(it) && it.name !in groupMembers })
+            val active = profile.id == activeId
+            val list = sorted(profile.servers.filter { matches(it) && !(active && it.name in groupMembers) })
             item(key = "profile:" + profile.id) {
                 ProfileHeader(profile, profile.id in collapsed, profile.id in refreshing, controller) {
                     collapsed = if (profile.id in collapsed) collapsed - profile.id else collapsed + profile.id
+                }
+            }
+            if (profile.id !in collapsed && query.isBlank()) {
+                if (active) proxyGroups(
+                    mihomoGroups, openGroups, groupsTesting, listPad,
+                    onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
+                    onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
+                    onTest = { g -> controller.haptic(); controller.testGroup(g) },
+                )
+                else if (profile.mihomo != null && mihomoGroups.isNotEmpty()) item(key = "switch:" + profile.id) {
+                    SwitchHint { controller.haptic(); controller.switchProfile(profile.id) }
                 }
             }
             if (profile.id !in collapsed) {
@@ -224,6 +234,7 @@ private fun ServersList(
                 }
             }
         }
+        if (profiles.isNotEmpty() && query.isBlank()) item(key = "add") { AddSubscriptionRow(onAdd) }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
@@ -262,40 +273,49 @@ private fun GroupLabel(text: String, icon: androidx.compose.ui.graphics.vector.I
 @Composable
 private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Boolean, controller: GhostlyController, onToggle: () -> Unit) {
     val c = Ghost.colors
+    val nav = LocalSubscriptionNav.current
     val arrow by animateFloatAsState(if (collapsed) -90f else 0f, Motion.bouncy())
     var menu by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().padding(start = LocalListPad.current, end = 12.dp, top = 16.dp, bottom = 4.dp)
-            .clip(RoundedCornerShape(12.dp)).clickable(remember { MutableInteractionSource() }, null, onClick = onToggle)
-            .padding(vertical = 6.dp, horizontal = 6.dp),
+        Modifier.fillMaxWidth().padding(start = LocalListPad.current - 6.dp, end = 8.dp, top = 16.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.ExpandMore, null, tint = c.ink3, modifier = Modifier.size(20.dp).rotate(arrow))
-        Spacer(Modifier.width(6.dp))
-        Column(Modifier.weight(1f)) {
-            app.ghostly.ui.components.FlagText(profile.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // The arrow folds the list; the rest of the header opens the subscription page.
+        Icon(Icons.Rounded.ExpandMore, if (collapsed) "Развернуть" else "Свернуть", tint = c.ink3,
+            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onToggle).padding(7.dp).rotate(arrow))
+        Column(
+            Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).pointerHoverIcon(PointerIcon.Hand)
+                .clickable { nav.open(profile.id) }.padding(horizontal = 6.dp, vertical = 6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                app.ghostly.ui.components.FlagText(profile.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                // There is a note from the provider: it is on the subscription page.
+                if (profile.announce != null) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Rounded.Campaign, "Есть сообщение", tint = c.accent, modifier = Modifier.size(15.dp))
+                }
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = c.ink3, modifier = Modifier.size(18.dp))
+            }
             val info = profile.info
             val parts = buildList {
                 add("${profile.servers.size} ${Format.plural(profile.servers.size.toLong(), "сервер", "сервера", "серверов")}")
                 if (info != null && !info.unlimitedTime) add(Format.expiryPhrase(info.expire, GhostlyController.now()).lowercase())
-                if (info != null && !info.unlimitedTraffic) add("${Format.bytes(info.used)} / ${Format.bytes(info.total)}")
             }
-            Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            // The provider's note, one line here; Home shows it in full.
-            profile.announce?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = c.accent, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Icon(Icons.Rounded.NetworkPing, "Пинг", tint = c.ink3,
-            modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).pointerHoverIcon(PointerIcon.Hand)
-                .clickable { controller.haptic(); controller.pingAll(profile.id) }.padding(8.dp))
         if (profile.url != null) {
-            if (refreshing) Spinner(c.accent, Modifier.size(18.dp).padding(1.dp))
-            else Icon(Icons.Rounded.Refresh, "Обновить", tint = c.ink3,
-                modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.refresh(profile.id) }.padding(8.dp))
+            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                if (refreshing) Spinner(c.accent, Modifier.size(18.dp))
+                else Icon(Icons.Rounded.Refresh, "Обновить", tint = c.ink3,
+                    modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { controller.refresh(profile.id) }.padding(8.dp))
+            }
         }
         Box {
             Icon(Icons.Rounded.MoreHoriz, null, tint = c.ink3,
                 modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable { menu = true }.padding(7.dp))
             DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem(text = { Text("О подписке") }, leadingIcon = { Icon(Icons.Rounded.Info, null) },
+                    onClick = { menu = false; nav.open(profile.id) })
                 DropdownMenuItem(text = { Text("Проверить пинг") }, leadingIcon = { Icon(Icons.Rounded.NetworkPing, null) },
                     onClick = { menu = false; controller.pingAll(profile.id) })
                 profile.webPageUrl?.let { url ->
@@ -314,6 +334,39 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
                     onClick = { menu = false; controller.deleteProfile(profile.id) })
             }
         }
+    }
+}
+
+/** Another Clash subscription: its selectors appear once it is the active one. */
+@Composable
+private fun SwitchHint(onSwitch: () -> Unit) {
+    val c = Ghost.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.04f))
+            .pointerHoverIcon(PointerIcon.Hand).clickable(onClick = onSwitch).padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Селекторы этой подписки появятся, когда она станет активной", style = MaterialTheme.typography.bodySmall, color = c.ink3, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        Text("Сделать активной", style = MaterialTheme.typography.labelMedium, color = c.accent)
+    }
+}
+
+/** Always at the end of the list, so another subscription is one tap away (also in the picker). */
+@Composable
+private fun AddSubscriptionRow(onAdd: () -> Unit) {
+    val c = Ghost.colors
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = LocalListPad.current, vertical = 14.dp)
+            .clip(RoundedCornerShape(16.dp)).border(1.dp, c.accent.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+            .background(c.accent.copy(alpha = 0.06f)).pointerHoverIcon(PointerIcon.Hand)
+            .clickable(onClick = onAdd).padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Add, null, tint = c.accent, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Добавить подписку", style = MaterialTheme.typography.labelLarge, color = c.accent)
     }
 }
 

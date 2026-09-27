@@ -33,6 +33,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -114,6 +115,9 @@ fun GhostlyApp(controller: GhostlyController) {
         var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
         var addOpen by remember { mutableStateOf(false) }
         var pickerOpen by remember { mutableStateOf(false) }
+        // The subscription page (all the provider's headers, actions, every subscription): which one is open.
+        var subOpen by remember { mutableStateOf<String?>(null) }
+        val subNav = remember { app.ghostly.ui.screens.SubscriptionNav(open = { subOpen = it }, add = { subOpen = null; pickerOpen = false; addOpen = true }) }
         var toast by remember { mutableStateOf<String?>(null) }
         var wideLayout by remember { mutableStateOf(false) }
 
@@ -133,7 +137,7 @@ fun GhostlyApp(controller: GhostlyController) {
         }
 
         val stage = app.ghostly.ui.stage.rememberStage(controller, settings.stageMode)
-        androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.stage.LocalStage provides stage) {
+        androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.stage.LocalStage provides stage, app.ghostly.ui.screens.LocalSubscriptionNav provides subNav) {
         AuroraBackground(energy = if (state is VpnState.Connected) 1f else 0f) {
             val insets = WindowInsets.safeDrawing.asPaddingValues()
             BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -192,6 +196,23 @@ fun GhostlyApp(controller: GhostlyController) {
             }
         }
 
+        }
+        subOpen?.let { id ->
+            if (wideLayout) {
+                Dialog(onDismissRequest = { subOpen = null }) {
+                    Box(
+                        Modifier.widthIn(max = 520.dp).heightIn(max = 760.dp).clip(RoundedCornerShape(28.dp)).background(Color(0xFF130E1D))
+                            .border(1.dp, Brush.verticalGradient(listOf(Ghost.colors.accent.copy(alpha = 0.4f), Color.White.copy(alpha = 0.05f))), RoundedCornerShape(28.dp))
+                            .padding(top = 24.dp),
+                    ) { app.ghostly.ui.screens.SubscriptionPage(controller, id, onAdd = subNav.add, onClose = { subOpen = null }) }
+                }
+            } else {
+                ModalBottomSheet(
+                    onDismissRequest = { subOpen = null },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = Color(0xFF110C1A), scrimColor = Color.Black.copy(alpha = 0.55f),
+                ) { app.ghostly.ui.screens.SubscriptionPage(controller, id, onAdd = subNav.add, onClose = { subOpen = null }) }
+            }
         }
         if (addOpen && wideLayout) {
             Dialog(onDismissRequest = { addOpen = false }) {

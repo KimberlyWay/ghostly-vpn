@@ -50,6 +50,23 @@ object Format {
         }
     }
 
+    /** "12 октября 2026" for a unix-seconds moment in the given UTC offset. */
+    fun date(epochSec: Long, offsetMin: Int): String {
+        // Days since 1970-01-01 → civil date (H. Hinnant's days_from_civil, inverted).
+        val z = (epochSec + offsetMin * 60L).floorDiv(86_400L) + 719_468
+        val era = z.floorDiv(146_097L)
+        val doe = z - era * 146_097
+        val yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val d = doy - (153 * mp + 2) / 5 + 1
+        val m = if (mp < 10) mp + 3 else mp - 9
+        val y = yoe + era * 400 + if (m <= 2) 1 else 0
+        return "$d ${MONTHS[(m - 1).toInt()]} $y"
+    }
+
+    private val MONTHS = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
     fun plural(n: Long, one: String, few: String, many: String): String {
         val m10 = n % 10
         val m100 = n % 100

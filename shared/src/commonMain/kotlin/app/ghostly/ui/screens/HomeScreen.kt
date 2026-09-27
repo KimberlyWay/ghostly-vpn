@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.NetworkPing
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
@@ -490,15 +491,17 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
     val info = profile.info
     val refreshing by controller.refreshing.collectAsState()
     val profiles by controller.profiles.collectAsState()
-    val subs = profiles.filter { it.url != null || it.info != null }
-    GlassCard(modifier.fillMaxWidth(), padding = 16.dp) {
+    val subs = profiles.subscriptions()
+    val nav = LocalSubscriptionNav.current
+    // The card itself opens the subscription page; its buttons act right here.
+    GlassCard(modifier.fillMaxWidth(), padding = 16.dp, onClick = { nav.open(profile.id) }) {
         // Name + when it was fetched; the switcher when there is more than one subscription.
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 app.ghostly.ui.components.FlagText(profile.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (profile.url != null) Text(Format.updatedAgo(profile.updatedAt, now), style = MaterialTheme.typography.bodySmall, color = c.ink3, maxLines = 1)
             }
-            if (subs.size > 1) {
+            run {
                 var open by remember { mutableStateOf(false) }
                 Box {
                     Row(
@@ -506,7 +509,10 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
                             .clickable { open = true }.padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("${subs.indexOfFirst { it.id == profile.id } + 1} из ${subs.size}", style = MaterialTheme.typography.labelMedium, color = c.ink2)
+                        Text(
+                            if (subs.size > 1) "${subs.indexOfFirst { it.id == profile.id } + 1} из ${subs.size}" else "Подписки",
+                            style = MaterialTheme.typography.labelMedium, color = c.ink2,
+                        )
                         Icon(Icons.Rounded.UnfoldMore, "Сменить подписку", tint = c.ink3, modifier = Modifier.size(18.dp))
                     }
                     androidx.compose.material3.DropdownMenu(open, { open = false }) {
@@ -524,6 +530,12 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
                                 onClick = { open = false; controller.haptic(); controller.switchProfile(p.id) },
                             )
                         }
+                        androidx.compose.material3.HorizontalDivider(color = c.line)
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("Добавить подписку", color = c.accent) },
+                            leadingIcon = { Icon(Icons.Rounded.Add, null, tint = c.accent) },
+                            onClick = { open = false; nav.add() },
+                        )
                     }
                 }
             }
@@ -564,19 +576,18 @@ fun SubscriptionCard(profile: Profile, now: Long, controller: GhostlyController,
             }
         }
 
-        // The provider's note (Remnawave `announce`): collapsed to three lines, a tap shows it all.
+        // The provider's note (Remnawave `announce`): the first lines here, all of it on the subscription page.
         profile.announce?.let { note ->
-            var expanded by remember(note) { mutableStateOf(false) }
             Spacer(Modifier.height(12.dp))
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.accent.copy(alpha = 0.08f))
-                    .clickable { expanded = !expanded }.padding(10.dp),
+                    .clickable { nav.open(profile.id) }.padding(10.dp),
             ) {
                 Icon(Icons.Rounded.Campaign, null, tint = c.accent, modifier = Modifier.size(16.dp).padding(top = 1.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(
+                app.ghostly.ui.components.FlagText(
                     note, style = MaterialTheme.typography.bodySmall, color = c.ink2,
-                    maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis,
                 )
             }
         }
