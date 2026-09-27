@@ -61,29 +61,16 @@ data class ServerTitle(val flag: String?, val title: String, val subtitle: Strin
 
 fun Server.title(): ServerTitle {
     var n = name.trim()
-    val flag = leadingFlag(n)
-    if (flag != null) n = n.removePrefix(flag).trim()
+    // The row's icon is the FIRST flag anywhere in the name (like Happ): "Автовыбор 🇪🇺 🤝🇷🇺" → EU.
+    val flag = FLAG_ANYWHERE.find(n)?.value
+    if (flag != null) n = n.replaceFirst(flag, " ").replace(Regex("\\s+"), " ").trim()
     val parts = n.split(" · ", " | ", " - ").map { it.trim() }.filter { it.isNotEmpty() }
     return if (parts.size >= 2) ServerTitle(flag, parts.first(), parts.drop(1).joinToString(" · "))
     else ServerTitle(flag, n.ifEmpty { name }, null)
 }
 
-/** A regional-indicator pair at the start of the string (a flag emoji), if any. */
-private fun leadingFlag(s: String): String? {
-    if (s.length < 4) return null
-    val a = s.codePointAtCompat(0)
-    val b = s.codePointAtCompat(2)
-    return if (a in 0x1F1E6..0x1F1FF && b in 0x1F1E6..0x1F1FF) s.substring(0, 4) else null
-}
-
-private fun String.codePointAtCompat(i: Int): Int {
-    val hi = this[i]
-    if (hi.isHighSurrogate() && i + 1 < length) {
-        val lo = this[i + 1]
-        return ((hi.code - 0xD800) shl 10) + (lo.code - 0xDC00) + 0x10000
-    }
-    return hi.code
-}
+/** A regional-indicator pair (a flag emoji) anywhere in a string. */
+private val FLAG_ANYWHERE = Regex("[\\x{1F1E6}-\\x{1F1FF}]{2}")
 
 fun Server.protocolLabel(): String = when (protocol) {
     "vless" -> "VLESS"
