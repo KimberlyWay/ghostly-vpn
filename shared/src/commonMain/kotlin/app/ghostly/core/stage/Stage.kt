@@ -15,7 +15,18 @@ interface StageSource {
     fun positionMs(): Long
     fun start()
     fun stop()
+
+    /** What the user still has to allow for the stage to work fully (null = nothing), in plain words. */
+    val setupNeeded: StateFlow<String?> get() = NoSetup
+
+    /** Opens the system screen/dialog for [setupNeeded]. */
+    fun requestSetup() {}
+
+    /** Where the music is heard: "на компьютере", "на телефоне". */
+    val whereLabel: String get() = "на компьютере"
 }
+
+private val NoSetup: StateFlow<String?> = kotlinx.coroutines.flow.MutableStateFlow(null)
 
 /** Everything 0..1 unless noted. */
 data class StageAudio(

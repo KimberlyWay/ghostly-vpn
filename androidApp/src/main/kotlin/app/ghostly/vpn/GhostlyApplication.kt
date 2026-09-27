@@ -74,6 +74,9 @@ class AndroidPlatform(private val context: Context) : PlatformInfo {
     override val qrScanner: ((onResult: (String) -> Unit) -> Unit)?
         get() = activityQrScanner
 
+    /** The ghost sings along with the music playing on the phone. */
+    override val stage: app.ghostly.vpn.stage.AndroidStage by lazy { app.ghostly.vpn.stage.AndroidStage(context) }
+
     override val systemVpnSettings: (() -> Unit) = {
         context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
