@@ -43,6 +43,9 @@ import kotlin.random.Random
 /** Light haptic tick, provided by the app (respects the user's vibration setting). */
 val LocalHaptic = staticCompositionLocalOf<() -> Unit> { {} }
 
+/** Haptic of a chosen strength for UI pieces (rows, switches, segmented controls). */
+val LocalHapticOf = staticCompositionLocalOf<(app.ghostly.core.vpn.Haptic) -> Unit> { {} }
+
 private class Particle(val start: Offset, val vx: Float, val heart: Boolean, val born: Long, val size: Float, val tint: Int)
 
 /**

@@ -130,12 +130,19 @@ private fun ServersList(
     val refreshing by controller.refreshing.collectAsState()
     val selected by controller.selectedServerId.collectAsState()
     val favorites by controller.favorites.collectAsState()
-    val mihomoGroups by controller.mihomoGroups.groups.collectAsState()
-    val groupsTesting by controller.mihomoGroups.testing.collectAsState()
+    val liveGroups by controller.mihomoGroups.groups.collectAsState()
+    val staticGroups by controller.staticMihomoGroups.collectAsState()
+    // Selectors are there before the first connect: drawn from the profile until the core reports live ones.
+    val mihomoGroups = liveGroups.ifEmpty { staticGroups }
+    val liveTesting by controller.mihomoGroups.testing.collectAsState()
+    val staticTesting by controller.groupsPinging.collectAsState()
+    val groupsTesting = liveTesting + staticTesting
     var openGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
     val listPad = LocalListPad.current
 
     var query by rememberSaveable { mutableStateOf("") }
+    // One list, not two: rows already offered inside the mihomo groups don't repeat below (search still finds them).
+    val groupMembers = if (query.isBlank()) mihomoGroups.flatMap { it.members }.toSet() else emptySet()
     var sort by rememberSaveable { mutableStateOf(Sort.LIST) }
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     // Rows animate in once; after that (scrolling back, recycling) they just appear.
@@ -175,26 +182,26 @@ private fun ServersList(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                IconBubble(Icons.Rounded.NetworkPing, { controller.haptic(); controller.pingAll() }, active = pinging.isNotEmpty())
+                IconBubble(Icons.Rounded.NetworkPing, { controller.haptic(app.ghostly.core.vpn.Haptic.TICK); controller.pingAll() }, active = pinging.isNotEmpty())
             }
         }
 
         if (profiles.isEmpty()) item { EmptyServers(onAdd) }
 
-        // Quick pick: the fastest server right now.
-        val best = controller.bestServer()?.takeIf { it.mihomo == null }
-        if (best != null && query.isBlank()) item {
-            BestRow(best, pings[best.id]?.ms) { pick(best) }
+        // Quick pick: the fastest server right now — but with mihomo the selectors decide, so the
+        // groups right below are the whole story and no quick-pick card is needed.
+        if (query.isBlank() && mihomoGroups.isEmpty()) controller.bestServer()?.let { best ->
+            item { BestRow(best, pings[best.id]?.ms) { pick(best) } }
         }
 
         if (query.isBlank()) proxyGroups(
             mihomoGroups, openGroups, groupsTesting, listPad,
             onToggle = { g -> openGroups = if (g in openGroups) openGroups - g else openGroups + g },
-            onSelect = { g, m -> controller.haptic(); controller.mihomoGroups.select(g, m) },
-            onTest = { g -> controller.haptic(); controller.mihomoGroups.test(g) },
+            onSelect = { g, m -> controller.haptic(); controller.pickGroup(g, m) },
+            onTest = { g -> controller.haptic(app.ghostly.core.vpn.Haptic.TICK); controller.testGroup(g) },
         )
 
-        val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) }
+        val favs = profiles.flatMap { it.servers }.filter { it.id in favorites && matches(it) && it.name !in groupMembers }
         if (favs.isNotEmpty()) {
             item { GroupLabel("Избранное", Icons.Rounded.Star) }
             items(sorted(favs), key = { "fav:" + it.id }) { s ->
@@ -203,23 +210,13 @@ private fun ServersList(
         }
 
         profiles.forEach { profile ->
-            val list = sorted(profile.servers.filter(::matches))
+            val list = sorted(profile.servers.filter { matches(it) && it.name !in groupMembers })
             item(key = "profile:" + profile.id) {
                 ProfileHeader(profile, profile.id in collapsed, profile.id in refreshing, controller) {
                     collapsed = if (profile.id in collapsed) collapsed - profile.id else collapsed + profile.id
                 }
             }
-            // A Clash profile is driven by its selectors (shown above): listing its proxies again
-            // as plain rows doubled everything and tapping a row bypassed the selectors.
-            val viaGroups = profile.mihomo != null && mihomoGroups.isNotEmpty() && query.isBlank()
-            if (viaGroups && profile.id !in collapsed) item(key = "viagroups:" + profile.id) {
-                Text(
-                    "Серверы этого профиля выбираются в группах выше",
-                    style = MaterialTheme.typography.bodySmall, color = c.ink3,
-                    modifier = Modifier.padding(start = listPad + 6.dp, top = 2.dp, bottom = 8.dp),
-                )
-            }
-            if (profile.id !in collapsed && !viaGroups) {
+            if (profile.id !in collapsed) {
                 itemsIndexed(list, key = { _, it -> it.id }) { i, s ->
                     val animate = remember(s.id) { seen.add(s.id) && i < 12 }
                     ServerRow(s, s.id == selected, pings[s.id], s.id in pinging, s.id in favorites, controller, Modifier.appear(i, enabled = animate).animateItem()) { pick(s) }
@@ -286,7 +283,7 @@ private fun ProfileHeader(profile: Profile, collapsed: Boolean, refreshing: Bool
         }
         Icon(Icons.Rounded.NetworkPing, "Пинг", tint = c.ink3,
             modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).pointerHoverIcon(PointerIcon.Hand)
-                .clickable { controller.haptic(); controller.pingAll(profile.id) }.padding(8.dp))
+                .clickable { controller.haptic(app.ghostly.core.vpn.Haptic.TICK); controller.pingAll(profile.id) }.padding(8.dp))
         if (profile.url != null) {
             if (refreshing) Spinner(c.accent, Modifier.size(18.dp).padding(1.dp))
             else Icon(Icons.Rounded.Refresh, "Обновить", tint = c.ink3,

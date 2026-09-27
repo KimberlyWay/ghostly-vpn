@@ -64,10 +64,18 @@ object MihomoConfigBuilder {
         else -> settings.core == CoreType.MIHOMO && server.link != null
     }
 
-    fun build(server: Server, profile: Profile?, settings: AppSettings, ingress: MihomoIngress, linksPath: String = LINKS_FILE): MihomoPlan {
+    fun build(
+        server: Server,
+        profile: Profile?,
+        settings: AppSettings,
+        ingress: MihomoIngress,
+        linksPath: String = LINKS_FILE,
+        /** The user's saved selector choices (group → member): they win over the selected server. */
+        stored: Map<String, String> = emptyMap(),
+    ): MihomoPlan {
         val provided = profile?.mihomo
-        return if (provided != null) fromProvider(provided, server, settings, ingress)
-        else fromLinks(server, profile, settings, ingress, linksPath)
+        return if (provided != null) fromProvider(provided, server, settings, ingress, stored)
+        else fromLinks(server, profile, settings, ingress, linksPath, stored)
     }
 
     /** In-place switch to [server] inside the running profile (no reconnect), or null when impossible. */
@@ -93,7 +101,7 @@ object MihomoConfigBuilder {
         "allow-lan", "bind-address", "lan-allowed-ips", "lan-disallowed-ips",
     )
 
-    private fun fromProvider(provided: JsonObject, server: Server, settings: AppSettings, ingress: MihomoIngress): MihomoPlan {
+    private fun fromProvider(provided: JsonObject, server: Server, settings: AppSettings, ingress: MihomoIngress, stored: Map<String, String>): MihomoPlan {
         val cfg = provided.filterKeys { it !in DROP_KEYS }.toMutableMap()
         common(cfg, settings, ingress)
         if (cfg["dns"] == null || (cfg["dns"] as? JsonObject)?.get("enable")?.bool() != true) {
@@ -112,19 +120,27 @@ object MihomoConfigBuilder {
         }
         cfg["rules"] = strings(userRules(settings, target) + rules)
 
-        // The profile's selectors decide (the user sets them up before connecting, MihomoGroups
-        // restores them on start). Steering to the tapped row here overrode them — e.g. «🧠 Умный
-        // выбор» was replaced by the first proxy on every connect.
-        return MihomoPlan(JsonObject(cfg), links = null, picks = emptyList())
+        // The user's saved selector choices win; the selected server only fills groups they never touched.
+        val groups = MihomoProfiles.groups(provided)
+        val storedPicks = stored.mapNotNull { (g, c) ->
+            val members = groups[g]?.takeIf { it.type == "select" }?.members ?: return@mapNotNull null
+            if (c in members) MihomoPick(g, c) else null
+        }
+        val derived = if (server.mihomo != null) MihomoProfiles.selectPath(provided, server.name).map { (g, c) -> MihomoPick(g, c) } else emptyList()
+        val picks = derived.filter { d -> storedPicks.none { it.group == d.group } } + storedPicks
+        return MihomoPlan(JsonObject(cfg), links = null, picks = picks)
     }
 
     // ------------------------------------------------------------------ link template
 
-    private fun fromLinks(server: Server, profile: Profile?, settings: AppSettings, ingress: MihomoIngress, linksPath: String): MihomoPlan {
+    private fun fromLinks(server: Server, profile: Profile?, settings: AppSettings, ingress: MihomoIngress, linksPath: String, stored: Map<String, String>): MihomoPlan {
         val linkServers = (profile?.servers ?: listOf(server)).filter { it.link != null && it.config == null }
             .ifEmpty { listOf(server) }
         val links = linkServers.mapNotNull { it.link }.joinToString("\n")
-        val index = linkServers.indexOfFirst { it.id == server.id }.coerceAtLeast(0)
+        // A saved «Ghostly» choice (a server, «Авто» or «Резерв») wins over the selected server.
+        val storedChoice = stored[MAIN_GROUP]
+        val storedIndex = if (storedChoice == null) -1 else linkServers.indexOfFirst { it.name == storedChoice }
+        val index = if (storedIndex >= 0) storedIndex else linkServers.indexOfFirst { it.id == server.id }.coerceAtLeast(0)
 
         val cfg = LinkedHashMap<String, JsonElement>()
         cfg["mode"] = JsonPrimitive("rule")
@@ -188,7 +204,10 @@ object MihomoConfigBuilder {
             add("MATCH,$MAIN_GROUP")
         }
         cfg["rules"] = strings(rules)
-        val picks = listOf(MihomoPick(MAIN_GROUP, provider = LINKS_PROVIDER, providerIndex = index))
+        val picks = when (storedChoice) {
+            AUTO_GROUP, FALLBACK_GROUP -> listOf(MihomoPick(MAIN_GROUP, choice = storedChoice))
+            else -> listOf(MihomoPick(MAIN_GROUP, provider = LINKS_PROVIDER, providerIndex = index))
+        }
         return MihomoPlan(JsonObject(cfg), links, picks)
     }
 

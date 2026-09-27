@@ -49,6 +49,9 @@ class MihomoApi(val port: Int, private val secret: String) {
 
     private val client = HttpClient { expectSuccess = false }
 
+    /** Diagnostics sink: platforms that keep a core log route select results into it. */
+    var log: (String) -> Unit = {}
+
     private fun HttpRequestBuilder.endpoint(vararg segments: String, query: Map<String, String> = emptyMap()) {
         url {
             protocol = URLProtocol.HTTP
@@ -98,12 +101,14 @@ class MihomoApi(val port: Int, private val secret: String) {
     }
 
     suspend fun select(group: String, name: String): Boolean = runCatching {
-        client.put {
+        val r = client.put {
             endpoint("proxies", group)
             contentType(ContentType.Application.Json)
             setBody(JsonObject(mapOf("name" to JsonPrimitive(name))).toString())
-        }.status.isSuccess()
-    }.getOrDefault(false)
+        }
+        if (!r.status.isSuccess()) log("select \"$group\" → \"$name\": ${r.status} ${r.bodyAsText().take(200)}")
+        r.status.isSuccess()
+    }.getOrElse { log("select \"$group\" → \"$name\": ${it.message}"); false }
 
     /** Tests every member of a group; mihomo stores the results, [groups] shows them afterwards. */
     suspend fun testGroup(group: String, url: String, timeoutMs: Int = 5000): Map<String, Int> = runCatching {

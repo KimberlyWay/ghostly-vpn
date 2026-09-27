@@ -41,6 +41,33 @@ class MihomoVpnService : VpnService() {
     private var running = false
     private var serverName = ""
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var logcatJob: kotlinx.coroutines.Job? = null
+
+    // ------------------------------------------------------------------ core log
+    // Everything the core and this service do lands in files/clash/logs/core.log, one file per
+    // start, so the app can show/copy it when mihomo misbehaves (the :mihomo process dies with the
+    // tunnel and takes stdout with it — a file is the only trace that survives). The app process
+    // appends its own lines to the same file, so every write here must be an O_APPEND append too:
+    // a writer that keeps its own offset would silently overwrite the other process's lines.
+
+    private val logTime = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+
+    @Synchronized
+    private fun log(line: String) {
+        Log.i(TAG, line)
+        runCatching { AndroidMihomo.logFile(this).appendText(logTime.format(java.util.Date()) + " " + line + "\n") }
+    }
+
+    private fun startLog() {
+        runCatching {
+            val f = AndroidMihomo.logFile(this)
+            f.parentFile?.mkdirs()
+            f.writeText("")
+        }
+        if (logcatJob == null) logcatJob = scope.launch {
+            for (m in Clash.subscribeLogcat()) log("[${m.level.name.lowercase()}] ${m.message}")
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -50,6 +77,8 @@ class MihomoVpnService : VpnService() {
                 goForeground(getString(R.string.notif_connecting))
                 scope.launch { start(intent) }
             }
+            ACTION_PING -> scope.launch { pingCore(intent) }
+            ACTION_PING_DONE -> scope.launch { pingDone() }
             // Restarted by the system without our request (START_STICKY after a kill): nothing to resume.
             else -> scope.launch { stop() }
         }
@@ -58,14 +87,37 @@ class MihomoVpnService : VpnService() {
 
     private suspend fun start(intent: Intent) = lock.withLock {
         try {
+            startLog()
+            pinging = false
             if (running) runCatching { Clash.stopTun() }
             val mtu = intent.getIntExtra(EXTRA_MTU, 1500)
             val ipv6 = intent.getBooleanExtra(EXTRA_IPV6, false)
             val split = runCatching { SplitMode.valueOf(intent.getStringExtra(EXTRA_SPLIT_MODE) ?: "") }.getOrDefault(SplitMode.OFF)
             val apps = intent.getStringArrayExtra(EXTRA_SPLIT_APPS).orEmpty()
+            log("start: server=$serverName mtu=$mtu ipv6=$ipv6 split=$split apps=${apps.size}")
+
+            // The bridge erases external-controller from the profile itself (patchExternalController
+            // in Prizrak-Box's config processor) — the controller only survives through the override
+            // slot, the way ClashMetaForAndroid sets it. Without this the REST API never listens:
+            // selector picks, groups and traffic stats silently die while the tunnel "connects".
+            val controller = intent.getIntExtra(EXTRA_CONTROLLER, 0)
+            val secret = intent.getStringExtra(EXTRA_SECRET)
+            if (controller > 0) {
+                Clash.patchOverride(
+                    Clash.OverrideSlot.Session,
+                    com.github.kr328.clash.core.model.ConfigurationOverride().apply {
+                        externalController = "127.0.0.1:$controller"
+                        this.secret = secret
+                        // The core's own lines (config, rules, dials) are the diagnostics we keep.
+                        logLevel = com.github.kr328.clash.core.model.LogMessage.Level.Info
+                    },
+                )
+                log("controller override set: 127.0.0.1:$controller")
+            } else log("no controller port in intent — REST API will be down")
 
             // Config first: a broken profile fails here, before the VPN takes over the network.
             Clash.load(AndroidMihomo.profileDir(this)).await()
+            log("config loaded from ${AndroidMihomo.profileDir(this)}")
 
             val builder = Builder()
                 .setSession("Ghostly · $serverName")
@@ -74,6 +126,8 @@ class MihomoVpnService : VpnService() {
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer(TUN_DNS)
                 .setBlocking(false)
+                // Like Prizrak Box: apps that legitimately manage their own sockets may bypass.
+                .allowBypass()
                 .setConfigureIntent(openAppIntent())
             if (ipv6) {
                 builder.addAddress(TUN_GATEWAY6, 126)
@@ -81,14 +135,16 @@ class MihomoVpnService : VpnService() {
                 builder.addDnsServer(TUN_DNS6)
             }
             if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false)
+            // Our own package must stay INSIDE the tunnel, exactly like Prizrak Box's TunService
+            // (`allInclude + packageName` / `allExclude - packageName`). The "system" stack answers
+            // every app connection from a socket this process listens on at the TUN gateway; if our
+            // UID is excluded, Android routes those replies past the tunnel and no connection ever
+            // completes — "connected", but no traffic. The core's own uplinks don't loop back: each
+            // one is protect()-ed through markSocket below.
             when (split) {
-                SplitMode.ONLY_SELECTED -> apps.forEach { runCatching { builder.addAllowedApplication(it) } }
-                SplitMode.BYPASS_SELECTED -> {
-                    builder.addDisallowedApplication(packageName)
-                    apps.forEach { runCatching { builder.addDisallowedApplication(it) } }
-                }
-                // Our own sockets (the core's uplinks, the app's controller calls) stay outside the tunnel.
-                SplitMode.OFF -> builder.addDisallowedApplication(packageName)
+                SplitMode.ONLY_SELECTED -> (apps.toSet() + packageName).forEach { runCatching { builder.addAllowedApplication(it) } }
+                SplitMode.BYPASS_SELECTED -> (apps.toSet() - packageName).forEach { runCatching { builder.addDisallowedApplication(it) } }
+                SplitMode.OFF -> Unit
             }
             val fd = builder.establish()?.detachFd() ?: throw IllegalStateException("Нет разрешения на VPN")
 
@@ -107,13 +163,53 @@ class MihomoVpnService : VpnService() {
             )
             running = true
             watchNetwork()
+            log("tun up (fd=$fd, stack=system, split=$split), own package inside the tunnel; reporting connected")
             report(STATE_CONNECTED)
             updateNotification("mihomo")
         } catch (e: Throwable) {
             Log.e(TAG, "start failed", e)
+            log("start failed: " + Log.getStackTraceString(e))
             report(STATE_FAILED, e.message?.takeIf { it.isNotBlank() }?.let { "mihomo: $it" } ?: "mihomo не запустился")
             shutdown()
         }
+    }
+
+    // ------------------------------------------------------------------ ping-only core
+    // Pings of Clash-profile proxies need a core. With no tunnel up the app asks this process to load
+    // a proxies-only config with a controller (no TUN, no VPN, no foreground), measures over REST and
+    // then lets it go. A real connect simply loads its own profile over it.
+
+    private var pinging = false
+
+    private suspend fun pingCore(intent: Intent): Unit = lock.withLock {
+        if (running) return@withLock
+        try {
+            Clash.patchOverride(
+                Clash.OverrideSlot.Session,
+                com.github.kr328.clash.core.model.ConfigurationOverride().apply {
+                    externalController = "127.0.0.1:" + intent.getIntExtra(EXTRA_CONTROLLER, 0)
+                    secret = intent.getStringExtra(EXTRA_SECRET)
+                },
+            )
+            Clash.load(AndroidMihomo.pingDir(this)).await()
+            pinging = true
+        } catch (e: Throwable) {
+            Log.w(TAG, "ping core failed", e)
+        }
+        Unit
+    }
+
+    private suspend fun pingDone(): Unit = lock.withLock {
+        if (running || !pinging) return@withLock
+        pinging = false
+        runCatching { Clash.reset() }
+        runCatching { Clash.clearOverride(Clash.OverrideSlot.Session) }
+        stopSelf()
+        scope.launch {
+            delay(300)
+            if (!running) android.os.Process.killProcess(android.os.Process.myPid())
+        }
+        Unit
     }
 
     private suspend fun stop() = lock.withLock {
@@ -123,12 +219,14 @@ class MihomoVpnService : VpnService() {
 
     /** Stop the core and end the process: the next start loads a fresh one. */
     private fun shutdown() {
+        log("shutdown")
         networkCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) } }
         networkCallback = null
         if (running) {
             runCatching { Clash.stopTun() }
             runCatching { Clash.reset() }
         }
+        runCatching { Clash.clearOverride(Clash.OverrideSlot.Session) }
         running = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -228,7 +326,11 @@ class MihomoVpnService : VpnService() {
         const val ACTION_START = "app.ghostly.vpn.MIHOMO_START"
         const val ACTION_STOP = "app.ghostly.vpn.MIHOMO_STOP"
         const val ACTION_STATE = "app.ghostly.vpn.MIHOMO_STATE"
+        const val ACTION_PING = "app.ghostly.vpn.MIHOMO_PING"
+        const val ACTION_PING_DONE = "app.ghostly.vpn.MIHOMO_PING_DONE"
         const val EXTRA_NAME = "name"
+        const val EXTRA_CONTROLLER = "controller"
+        const val EXTRA_SECRET = "secret"
         const val EXTRA_MTU = "mtu"
         const val EXTRA_IPV6 = "ipv6"
         const val EXTRA_SPLIT_MODE = "split_mode"

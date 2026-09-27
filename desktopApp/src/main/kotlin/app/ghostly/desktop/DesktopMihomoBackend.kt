@@ -66,6 +66,9 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
         private set
     private val log = ArrayDeque<String>()
 
+    override suspend fun coreLogs(): String? =
+        synchronized(log) { log.toList() }.takeIf { it.isNotEmpty() }?.joinToString("\n")
+
     /** mihomo's home: config, provider files, geo data, cache. */
     private val home: File get() = File(platform.dataDir, "mihomo").apply { mkdirs() }
 
@@ -75,7 +78,7 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
         Runtime.getRuntime().addShutdownHook(Thread { stopBlocking() })
     }
 
-    override suspend fun connect(server: Server, profile: Profile?, settings: AppSettings): Unit = lock.withLock {
+    override suspend fun connect(server: Server, profile: Profile?, settings: AppSettings, stored: Map<String, String>): Unit = lock.withLock {
         withContext(Dispatchers.IO) {
             stopBlocking()
             _state.value = VpnState.Connecting
@@ -101,7 +104,7 @@ class DesktopMihomoBackend(private val platform: DesktopPlatform, private val xr
                 osHttpPort = osPort,
                 tun = if (tun) MihomoIngress.Tun(if (hostOs == HostOs.MACOS) "utun199" else "Ghostly", settings.mtu) else null,
             )
-            val plan = MihomoConfigBuilder.build(server, profile, settings, ingress)
+            val plan = MihomoConfigBuilder.build(server, profile, settings, ingress, stored = stored)
             val dir = home
             copyGeoData(dir)
             plan.links?.let { File(dir, MihomoConfigBuilder.LINKS_FILE).writeText(it) }

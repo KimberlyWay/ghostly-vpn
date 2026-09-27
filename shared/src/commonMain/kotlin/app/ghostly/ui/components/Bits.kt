@@ -155,6 +155,7 @@ fun SoftButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 @Composable
 fun IconBubble(icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 42.dp, tint: Color = Ghost.colors.ink2, active: Boolean = false) {
     val c = Ghost.colors
+    val feel = LocalHapticOf.current
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val bg by animateColorAsState(
@@ -207,6 +208,7 @@ fun SettingRow(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val c = Ghost.colors
+    val feel = LocalHapticOf.current
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val pressed by interaction.collectIsPressedAsState()
@@ -217,7 +219,7 @@ fun SettingRow(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
-            .then(if (onClick != null) Modifier.spotlight(c.accent, 180.dp).clickable(interaction, null, onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.spotlight(c.accent, 180.dp).clickable(interaction, null) { feel(app.ghostly.core.vpn.Haptic.TICK); onClick() } else Modifier)
             .padding(vertical = 11.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -251,6 +253,7 @@ fun ToggleRow(title: String, subtitle: String?, checked: Boolean, icon: ImageVec
 /** iOS-like segmented control with a sliding liquid thumb. */
 @Composable
 fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+    val feel = LocalHapticOf.current
     val c = Ghost.colors
     val index = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
     val pos by animateFloatAsState(index.toFloat(), Motion.bouncy())
@@ -267,7 +270,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
             options.forEach { (value, label) ->
                 Box(
                     Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(11.dp))
-                        .clickable(remember { MutableInteractionSource() }, null) { onSelect(value) },
+                        .clickable(remember { MutableInteractionSource() }, null) { if (value != selected) feel(app.ghostly.core.vpn.Haptic.CLICK); onSelect(value) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(label, style = MaterialTheme.typography.labelMedium, color = if (value == selected) c.ink else c.ink3, maxLines = 1)

@@ -22,7 +22,11 @@ interface MihomoCore : VpnBackend {
     /** REST API of the running core; null while down. */
     val api: MihomoApi?
 
-    suspend fun connect(server: Server, profile: Profile?, settings: AppSettings)
+    /** [stored] is the user's saved selector choices (group → member) for the profile. */
+    suspend fun connect(server: Server, profile: Profile?, settings: AppSettings, stored: Map<String, String> = emptyMap())
+
+    /** The core's log of the last run (for support), newest lines last; null when there is none. */
+    suspend fun coreLogs(): String? = null
 
     /** Real latency of Clash-profile proxies (they can't go through Xray); defaults to "unknown". */
     suspend fun pingProfile(servers: List<Server>, profile: Profile, url: String, onResult: (String, Long) -> Unit) {
@@ -46,6 +50,9 @@ class DualCoreBackend(
     /** Set by the controller: the profile a server belongs to. */
     var profileOf: (serverId: String) -> Profile? = { null }
 
+    /** Set by the controller: the user's saved selector choices of a profile (group → member). */
+    var picksOf: (profileId: String) -> Map<String, String> = { emptyMap() }
+
     private val active = MutableStateFlow<VpnBackend>(xray)
 
     /** The core that runs (or last ran) the tunnel. */
@@ -68,7 +75,7 @@ class DualCoreBackend(
             if (previous.state.value !is VpnState.Idle && previous.state.value !is VpnState.Failed) previous.disconnect()
             active.value = target
         }
-        if (target === mihomo) mihomo.connect(server, profile, settings) else xray.connect(server, settings)
+        if (target === mihomo) mihomo.connect(server, profile, settings, profile?.let { picksOf(it.id) } ?: emptyMap()) else xray.connect(server, settings)
     }
 
     override suspend fun disconnect() = active.value.disconnect()

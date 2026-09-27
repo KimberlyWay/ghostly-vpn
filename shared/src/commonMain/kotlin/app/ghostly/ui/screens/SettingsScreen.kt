@@ -109,19 +109,25 @@ private enum class Page { MAIN, ROUTING, DNS, APPS, PROXY, ADVANCED, ABOUT }
 const val GITHUB_URL = "https://github.com/Nelxi/ghostly-vpn"
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues) {
     var page by rememberSaveable { mutableStateOf(Page.MAIN) }
-    // Predictive back: while the finger drags, the page slides away and the main list shows beneath.
+    // The system back gesture climbs out of a sub-page instead of leaving the app.
+    // Predictive back: while the finger drags, the page slides aside and the main list shows beneath.
     var peek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    app.ghostly.ui.components.PlatformBackHandler(
-        enabled = page != Page.MAIN,
-        onProgress = { peek = it },
-        onCancel = { peek = 0f },
-        onBack = { peek = 0f; page = Page.MAIN },
-    )
-    Box(Modifier.fillMaxSize()) {
+    androidx.compose.ui.backhandler.PredictiveBackHandler(enabled = page != Page.MAIN) { progress ->
+        try {
+            progress.collect { peek = it.progress }
+            peek = 0f
+            page = Page.MAIN
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            peek = 0f
+            throw e
+        }
+    }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
     if (peek > 0f && page != Page.MAIN) {
-        Box(Modifier.fillMaxSize().graphicsLayer {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().graphicsLayer {
             val k = 0.94f + 0.06f * peek
             scaleX = k; scaleY = k; alpha = 0.35f + 0.65f * peek
         }) { MainSettings(controller, contentPadding) {} }
@@ -150,8 +156,7 @@ fun SettingsScreen(controller: GhostlyController, contentPadding: PaddingValues)
             Page.ADVANCED -> AdvancedPage(controller, contentPadding, back)
             Page.ABOUT -> AboutPage(controller, contentPadding, back)
         }
-    }
-    }
+    }}
 }
 
 @Composable
@@ -693,9 +698,11 @@ private fun AboutPage(controller: GhostlyController, contentPadding: PaddingValu
         }
         app.ghostly.ui.components.UpdateBanner(controller, Modifier.padding(bottom = 12.dp))
         Group {
-            val core = controller.settings.collectAsState().value.core
-            val dual = controller.backend as? app.ghostly.core.mihomo.DualCoreBackend
-            SettingRow("Ядро", dual?.let { if (core == CoreType.MIHOMO) it.mihomo.coreVersion() else it.xray.coreVersion() } ?: controller.backend.coreVersion(), Icons.Rounded.Speed)
+            SettingRow("Ядро", controller.backend.coreVersion(), Icons.Rounded.Speed)
+            SettingRow(
+                "Логи mihomo", "Скопировать журнал последнего запуска ядра", Icons.Rounded.ContentCopy,
+                onClick = { controller.haptic(); controller.copyMihomoLogs() },
+            ) { Chevron() }
             if (controller.platform.updateAsset != null) {
                 val last by controller.updater.lastCheck.collectAsState()
                 SettingRow("Проверить обновления", last ?: "Скачиваются с нашего сервера и проверяются по SHA-256", Icons.Rounded.Refresh, onClick = { controller.checkUpdates(manual = true) }) { Chevron() }

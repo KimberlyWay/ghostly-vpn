@@ -25,7 +25,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -56,6 +61,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -93,7 +100,7 @@ const val SITE_URL = "https://ghostlinknex.online"
 
 internal enum class Tab(val title: String) { HOME("Главная"), SERVERS("Серверы"), SETTINGS("Настройки") }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun GhostlyApp(controller: GhostlyController) {
     val settings by controller.settings.collectAsState()
@@ -103,12 +110,34 @@ fun GhostlyApp(controller: GhostlyController) {
     val design by controller.design.tokens.collectAsState()
     // A seasonal accent from the server applies only while the user keeps the default colour.
     val accent = design.accentArgb()?.takeIf { settings.accent == app.ghostly.core.model.ThemeAccent.GHOST } ?: settings.accent.argb
-    GhostlyTheme(accent, settings.reduceMotion) { androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.components.LocalHaptic provides { controller.haptic() }, app.ghostly.ui.theme.LocalDesign provides design) {
+    GhostlyTheme(accent, settings.reduceMotion) { androidx.compose.runtime.CompositionLocalProvider(app.ghostly.ui.components.LocalHaptic provides { controller.haptic(app.ghostly.core.vpn.Haptic.TICK) }, app.ghostly.ui.components.LocalHapticOf provides { k -> controller.haptic(k) }, app.ghostly.ui.theme.LocalDesign provides design) {
         var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
         var addOpen by remember { mutableStateOf(false) }
         var pickerOpen by remember { mutableStateOf(false) }
         var toast by remember { mutableStateOf<String?>(null) }
         var wideLayout by remember { mutableStateOf(false) }
+
+        // Android back gesture: any tab goes back to Home first; only Home leaves the app.
+        // Registered before the screens, so a screen's own handler (settings sub-pages) wins.
+        // While dragging back the current tab shrinks toward Home (predictive back, Android 14+).
+        var tabPeek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        androidx.compose.ui.backhandler.PredictiveBackHandler(enabled = onboarded && !wideLayout && tab != Tab.HOME) { progress ->
+            try {
+                progress.collect { tabPeek = it.progress }
+                tabPeek = 0f
+                tab = Tab.HOME
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                tabPeek = 0f
+                throw e
+            }
+        }
+        // On Home the first back only warns; a second one within 2 s leaves the app.
+        var exitArmed by remember { mutableStateOf(false) }
+        androidx.compose.ui.backhandler.BackHandler(enabled = onboarded && !wideLayout && tab == Tab.HOME && !exitArmed) {
+            exitArmed = true
+            toast = "Свайпните ещё раз, чтобы выйти"
+        }
+        LaunchedEffect(exitArmed) { if (exitArmed) { delay(2000); exitArmed = false } }
 
         LaunchedEffect(Unit) {
             controller.events.collect { msg ->
@@ -132,30 +161,14 @@ fun GhostlyApp(controller: GhostlyController) {
                     wide -> DesktopShell(controller, tab, { tab = it }, onAdd = { addOpen = true })
                     else -> {
                         val pad = PaddingValues(top = insets.calculateTopPadding() + 8.dp, bottom = insets.calculateBottomPadding() + 96.dp)
-                        // Back from another tab returns to Главная (the screen shrinks toward it while dragging);
-                        // only from Главная does back leave the app.
-                        var tabPeek by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-                        app.ghostly.ui.components.PlatformBackHandler(
-                            enabled = tab != Tab.HOME && !addOpen && !pickerOpen,
-                            onProgress = { tabPeek = it },
-                            onCancel = { tabPeek = 0f },
-                            onBack = { tabPeek = 0f; tab = Tab.HOME },
-                        )
-                        // On Главная the first back only warns; a second one within 2 s leaves the app.
-                        var exitArmed by remember { mutableStateOf(false) }
-                        app.ghostly.ui.components.PlatformBackHandler(
-                            enabled = tab == Tab.HOME && !exitArmed && !addOpen && !pickerOpen,
-                            onBack = { exitArmed = true; toast = "Свайпните ещё раз, чтобы выйти" },
-                        )
-                        LaunchedEffect(exitArmed) { if (exitArmed) { delay(2000); exitArmed = false } }
                         AnimatedContent(
+                            targetState = tab,
+                            transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
                             modifier = Modifier.fillMaxSize().graphicsLayer {
                                 val k = 1f - 0.07f * tabPeek
                                 scaleX = k; scaleY = k
                                 alpha = 1f - 0.3f * tabPeek
                             },
-                            targetState = tab,
-                            transitionSpec = { (fadeIn(Motion.quick(260)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(Motion.quick(160)) },
                         ) { t ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                                 Box(Modifier.widthIn(max = 620.dp).fillMaxSize()) {
@@ -174,6 +187,15 @@ fun GhostlyApp(controller: GhostlyController) {
             }
             // Music on the PC: the whole composition plays along (dimming, rim lights, drop flash, sparks).
             stage?.let { app.ghostly.ui.stage.StageOverlay(it) }
+
+            // Server picker: our own sheet (see PickerSheet for why not ModalBottomSheet).
+            PickerSheet(pickerOpen, onClose = { pickerOpen = false }, title = "Выбор сервера") {
+                ServersScreen(
+                    controller, PaddingValues(bottom = insets.calculateBottomPadding() + 24.dp),
+                    onAdd = { pickerOpen = false; addOpen = true },
+                    onPicked = { pickerOpen = false }, showHeader = false,
+                )
+            }
 
             // Toast
             AnimatedVisibility(
@@ -208,22 +230,134 @@ fun GhostlyApp(controller: GhostlyController) {
                 containerColor = Color(0xFF110C1A), scrimColor = Color.Black.copy(alpha = 0.55f),
             ) { AddSheet(controller) { addOpen = false } }
         }
-        if (pickerOpen) {
-            ModalBottomSheet(
-                onDismissRequest = { pickerOpen = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
-                containerColor = Color(0xFF110C1A), scrimColor = Color.Black.copy(alpha = 0.55f),
-            ) {
-                Text("Выбор сервера", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 22.dp))
-                ServersScreen(
-                    controller, PaddingValues(bottom = 24.dp),
-                    onAdd = { pickerOpen = false; addOpen = true },
-                    onPicked = { pickerOpen = false }, showHeader = false,
-                )
-            }
-        }
     }
 }}
+
+// ---------------------------------------------------------------------------- picker sheet
+
+/**
+ * Bottom sheet over the whole app, shaped like Material's: opens half-way, a swipe up on the list
+ * first raises it to full height, a swipe down with the list at its top pulls it down or closes it.
+ *
+ * Our own instead of ModalBottomSheet because that one kept the fling of a swipe that moved the
+ * sheet — the list "sometimes scrolled, sometimes not" — and its dialog window could swallow the
+ * next tap. Here a swipe moves the sheet only while the sheet actually has somewhere to go; once it
+ * is up, every swipe and fling belongs to the list.
+ */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun BoxScope.PickerSheet(
+    open: Boolean,
+    onClose: () -> Unit,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    androidx.compose.ui.backhandler.BackHandler(enabled = open, onBack = onClose)
+    var shown by remember { mutableStateOf(false) }
+    BoxWithConstraints(Modifier.matchParentSize()) {
+        val screen = constraints.maxHeight.toFloat()
+        val full = screen * 0.92f           // panel height; offset 0 = fully up
+        val half = full - screen * 0.58f    // offset of the half-open state
+        val hidden = full                   // offset that puts the panel below the screen
+        var off by remember { mutableFloatStateOf(hidden) }
+        val scope = rememberCoroutineScope()
+        var settling by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+        fun animateTo(target: Float, then: () -> Unit = {}) {
+            settling?.cancel()
+            settling = scope.launch {
+                androidx.compose.animation.core.animate(off, target, animationSpec = androidx.compose.animation.core.spring(stiffness = 500f)) { v, _ -> off = v }
+                then()
+            }
+        }
+        fun settle(velocity: Float) {
+            val target = when {
+                velocity > 1400f -> if (off < half - 1f) half else hidden
+                velocity < -1400f -> 0f
+                off > half + (hidden - half) * 0.4f -> hidden
+                off > half / 2 -> half
+                else -> 0f
+            }
+            if (target == hidden) onClose() else animateTo(target)
+        }
+        LaunchedEffect(open) {
+            if (open) {
+                shown = true
+                off = hidden
+                animateTo(half)
+            } else if (shown) {
+                animateTo(hidden) { shown = false }
+            }
+        }
+        if (!shown) return@BoxWithConstraints
+
+        // The sheet takes the part of a swipe it can use and hands the rest to the list.
+        val connection = remember(half, hidden) {
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                var moved = false
+                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    val dy = available.y
+                    if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || dy >= 0f || off <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    settling?.cancel()
+                    val next = (off + dy).coerceAtLeast(0f)
+                    val used = next - off
+                    off = next
+                    moved = true
+                    return androidx.compose.ui.geometry.Offset(0f, used)
+                }
+                override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    val dy = available.y
+                    if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || dy <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    settling?.cancel()
+                    off = (off + dy).coerceAtMost(hidden)
+                    moved = true
+                    return androidx.compose.ui.geometry.Offset(0f, dy)
+                }
+                override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                    if (!moved) return androidx.compose.ui.unit.Velocity.Zero
+                    moved = false
+                    val wasUp = off <= 0.5f
+                    settle(available.y)
+                    // Sheet reached the top during this swipe: the rest of the fling scrolls the list.
+                    return if (wasUp && available.y < 0f) androidx.compose.ui.unit.Velocity.Zero else available
+                }
+            }
+        }
+
+        Box(
+            Modifier.fillMaxSize().graphicsLayer { alpha = (1f - off / hidden).coerceIn(0f, 1f) }
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
+        )
+        Column(
+            Modifier.align(Alignment.BottomCenter).widthIn(max = 620.dp).fillMaxWidth()
+                .height(with(androidx.compose.ui.platform.LocalDensity.current) { full.toDp() })
+                .graphicsLayer { translationY = off }
+                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                .background(Color(0xFF110C1A))
+                // Taps on the panel itself must not fall through to the scrim.
+                .clickable(remember { MutableInteractionSource() }, null) {}
+                .nestedScroll(connection),
+        ) {
+            // Handle and title drag the sheet directly.
+            Column(
+                Modifier.fillMaxWidth().draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { d ->
+                        settling?.cancel()
+                        off = (off + d).coerceIn(0f, hidden)
+                    },
+                    onDragStopped = { v -> settle(v) },
+                ),
+            ) {
+                Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(width = 36.dp, height = 4.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.28f)))
+                }
+                Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = 22.dp, end = 22.dp, bottom = 4.dp))
+            }
+            content()
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------- tab bar
 

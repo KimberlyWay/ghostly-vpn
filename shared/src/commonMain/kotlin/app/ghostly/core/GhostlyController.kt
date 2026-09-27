@@ -45,7 +45,7 @@ private data class UiState(
     val onboarded: Boolean = false,
     /** Update version the user closed with ✕ — not offered again until a newer one appears. */
     val dismissedUpdate: String? = null,
-    /** mihomo selectors the user set, per Clash profile: profileId → (group → member). */
+    /** mihomo selector choices per profile (profileId → group → member): survive reconnects and restarts. */
     val mihomoPicks: Map<String, Map<String, String>> = emptyMap(),
 )
 
@@ -80,6 +80,8 @@ class GhostlyController(
     private val _pings = MutableStateFlow(_ui.value.pings)
     val pings: StateFlow<Map<String, Ping>> = _pings.asStateFlow()
 
+    private val _mihomoPicks = MutableStateFlow(_ui.value.mihomoPicks)
+
     private val _pinging = MutableStateFlow<Set<String>>(emptySet())
     val pinging: StateFlow<Set<String>> = _pinging.asStateFlow()
 
@@ -91,31 +93,23 @@ class GhostlyController(
     /** Server-tunable look (glow, parallax, seasonal accent, announcement) — changes without an app update. */
     val design = app.ghostly.core.design.RemoteDesign(store, "GhostlyVPN/${platform.appVersion} (${platform.os})")
 
-    private val _mihomoPicks = MutableStateFlow(_ui.value.mihomoPicks)
-
-    /** The Clash profile whose selectors are shown: the selected server's, else the first one (mihomo core only). */
-    private val groupSource: StateFlow<app.ghostly.core.mihomo.GroupSource?> =
-        kotlinx.coroutines.flow.combine(_selected, _profiles, _settings) { sel, list, s ->
-            if (s.core != app.ghostly.core.model.CoreType.MIHOMO) return@combine null
-            val clash = list.filter { it.mihomo != null }
-            val p = clash.firstOrNull { pr -> pr.servers.any { it.id == sel } } ?: clash.firstOrNull()
-            p?.let { app.ghostly.core.mihomo.GroupSource(it.id, it.mihomo!!) }
-        }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
-
-    /** Proxy groups (selectors) of the Clash profile: from its config before connecting, live while mihomo runs. */
-    val mihomoGroups = app.ghostly.core.mihomo.MihomoGroups(
-        backend as? app.ghostly.core.mihomo.DualCoreBackend, scope, { _settings.value.pingUrl },
-        groupSource, _mihomoPicks,
-    ) { profileId, group, member ->
-        _mihomoPicks.update { all -> all + (profileId to (all[profileId].orEmpty() + (group to member))) }
-        // A selector belongs to its profile: connecting must start that profile, not a server of another one.
-        val profile = _profiles.value.firstOrNull { it.id == profileId }
-        if (profile != null && profile.servers.none { it.id == _selected.value }) _selected.value = profile.servers.firstOrNull()?.id
-        saveUi()
-    }
+    /** Proxy groups (selectors) of the running mihomo core. */
+    val mihomoGroups = app.ghostly.core.mihomo.MihomoGroups(backend as? app.ghostly.core.mihomo.DualCoreBackend, scope) { _settings.value.pingUrl }
 
     /** App self-update (our server first, GitHub mirror), verified by SHA-256. */
     val updater = app.ghostly.core.update.Updater(platform) { v -> v == dismissedUpdate }
+
+    /** Copies the mihomo core's log of the last run to the clipboard (for a support message). */
+    fun copyMihomoLogs() {
+        scope.launch(Dispatchers.IO) {
+            val logs = (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.mihomo?.coreLogs()
+            if (logs == null) _events.emit("Журнал пуст — сначала попробуй подключиться с ядром mihomo")
+            else {
+                platform.copyToClipboard(logs)
+                _events.emit("Журнал mihomo скопирован — вставь его в чат поддержки")
+            }
+        }
+    }
 
     fun dismissUpdate() {
         dismissedUpdate = updater.offer.value?.version
@@ -153,6 +147,7 @@ class GhostlyController(
             updateSettings { it.copy(core = app.ghostly.core.model.CoreType.XRAY, coreXrayRestored = true) }
         }
         (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.profileOf = ::profileOf
+        (backend as? app.ghostly.core.mihomo.DualCoreBackend)?.picksOf = { id -> _mihomoPicks.value[id] ?: emptyMap() }
         app.ghostly.core.vpn.Probe.method = _settings.value.pingMethod
         // A kill switch left engaged by a crash must never keep the internet blocked.
         platform.killSwitch?.takeIf { it.engaged }?.let { ks -> scope.launch(Dispatchers.IO) { ks.release() } }
@@ -164,6 +159,7 @@ class GhostlyController(
             backend.state.collect { s ->
                 when (s) {
                     is VpnState.Connected -> {
+                        if (userWantsConnection) haptic(app.ghostly.core.vpn.Haptic.SUCCESS)
                         failoverAttempts = 0
                         releaseKillSwitch()
                         startGuard()
@@ -171,6 +167,7 @@ class GhostlyController(
                         if (_settings.value.autoUpdateSubs) launch(Dispatchers.IO) { kotlinx.coroutines.delay(3_000); refreshAll() }
                     }
                     is VpnState.Failed -> {
+                        if (userWantsConnection) haptic(app.ghostly.core.vpn.Haptic.ERROR)
                         stopGuard()
                         if (userWantsConnection) {
                             engageKillSwitch()
@@ -419,6 +416,12 @@ class GhostlyController(
     fun select(serverId: String?) {
         val previous = _selected.value
         _selected.value = serverId
+        if (serverId != null && _settings.value.core == app.ghostly.core.model.CoreType.MIHOMO) {
+            // Picking a server is also a selector choice — remember it, so reconnects keep it.
+            val target = server(serverId)
+            val profile = target?.let { profileOf(it.id) }
+            if (target != null && profile != null) rememberPicks(profile, picksAsChoices(target, profile))
+        }
         saveUi()
         if (serverId != null && serverId != previous && backend.state.value is VpnState.Connected) {
             scope.launch {
@@ -427,6 +430,105 @@ class GhostlyController(
                 if (target == null || !backend.switchInPlace(target)) reconnect()
             }
         }
+    }
+
+    // ------------------------------------------------------------------ mihomo selectors
+
+    /** Saved selector choices of a profile (group → member). */
+    fun mihomoPicksOf(profileId: String): Map<String, String> = _mihomoPicks.value[profileId] ?: emptyMap()
+
+    /** What connecting to [server] would set the selectors to, as group → member names. */
+    private fun picksAsChoices(server: Server, profile: Profile): Map<String, String> {
+        val provided = profile.mihomo
+        return if (provided != null) {
+            if (server.mihomo != null) app.ghostly.core.mihomo.MihomoProfiles.selectPath(provided, server.name).toMap() else emptyMap()
+        } else mapOf(app.ghostly.core.mihomo.MihomoConfigBuilder.MAIN_GROUP to server.name)
+    }
+
+    private fun rememberPicks(profile: Profile, choices: Map<String, String>) {
+        if (choices.isEmpty()) return
+        _mihomoPicks.update { all -> all + (profile.id to ((all[profile.id] ?: emptyMap()) + choices)) }
+        saveUi()
+    }
+
+    /**
+     * The user picked [member] in selector [group] (from the list, running core or not). The choice is
+     * saved, applied to the running core when there is one, and the selected server follows it.
+     */
+    fun pickGroup(group: String, member: String) {
+        val profile = groupOwner(group) ?: return
+        rememberPicks(profile, mapOf(group to member))
+        // The row on the Home screen follows the pick when it names a server of the profile.
+        profile.servers.firstOrNull { it.name == member }?.let { s ->
+            _selected.value = s.id
+            saveUi()
+        }
+        mihomoGroups.select(group, member)
+    }
+
+    /** The visible profile a selector belongs to: by its groups for Clash profiles, the link profile otherwise. */
+    private fun groupOwner(group: String): Profile? {
+        val visible = visibleProfiles()
+        visible.firstOrNull { p -> p.mihomo?.let { group in app.ghostly.core.mihomo.MihomoProfiles.groups(it).keys } == true }?.let { return it }
+        val links = visible.filter { it.mihomo == null && it.servers.any { s -> s.link != null && s.config == null } }
+        return links.firstOrNull { p -> p.servers.any { it.id == _selected.value } } ?: links.firstOrNull()
+    }
+
+    /**
+     * Selector groups drawn before the core runs (and while it starts): the same groups the running
+     * core would report, built from the profiles, with saved choices as `now` and TCP pings as delays.
+     */
+    val staticMihomoGroups: StateFlow<List<app.ghostly.core.mihomo.ProxyGroupInfo>> by lazy {
+        kotlinx.coroutines.flow.combine(profiles, _mihomoPicks, _selected, _pings, _settings) { list, picks, selected, pings, s ->
+            if (s.core != app.ghostly.core.model.CoreType.MIHOMO) emptyList()
+            else buildList {
+                list.forEach { p -> addAll(staticGroups(p, picks[p.id] ?: emptyMap(), selected, pings)) }
+            }
+        }.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyList())
+    }
+
+    private fun staticGroups(profile: Profile, picks: Map<String, String>, selected: String?, pings: Map<String, Ping>): List<app.ghostly.core.mihomo.ProxyGroupInfo> {
+        val delays = profile.servers.mapNotNull { s -> pings[s.id]?.takeIf(Ping::ok)?.let { s.name to it.ms.toInt() } }.toMap()
+        val provided = profile.mihomo
+        if (provided != null) {
+            val groups = app.ghostly.core.mihomo.MihomoProfiles.groups(provided)
+            // Groups the config marks `hidden: true` work under the hood (through the visible groups'
+            // selectors) but never show as rows, like mihomo's own clients draw it.
+            return groups.filterValues { !it.hidden }.map { (name, g) ->
+                val type = g.type
+                val members = g.members
+                app.ghostly.core.mihomo.ProxyGroupInfo(
+                    name = name,
+                    type = when (type) {
+                        "select" -> "Selector"
+                        "url-test" -> "URLTest"
+                        "fallback" -> "Fallback"
+                        "load-balance" -> "LoadBalance"
+                        "relay" -> "Relay"
+                        else -> type.replaceFirstChar { it.uppercase() }
+                    },
+                    now = picks[name] ?: members.firstOrNull().takeIf { type == "select" },
+                    members = members,
+                    delays = delays.filterKeys { it in members },
+                    nestedGroups = members.filter { it in groups.keys }.toSet(),
+                )
+            }
+        }
+        // Link profiles: the template's groups. Shown only for the profile the selection is in (they all look alike).
+        val links = profile.servers.filter { it.link != null && it.config == null }
+        if (links.isEmpty()) return emptyList()
+        val owner = groupOwner(app.ghostly.core.mihomo.MihomoConfigBuilder.MAIN_GROUP)
+        if (owner?.id != profile.id) return emptyList()
+        val names = links.map { it.name }
+        val auto = app.ghostly.core.mihomo.MihomoConfigBuilder.AUTO_GROUP
+        val fallback = app.ghostly.core.mihomo.MihomoConfigBuilder.FALLBACK_GROUP
+        val now = picks[app.ghostly.core.mihomo.MihomoConfigBuilder.MAIN_GROUP]
+            ?: links.firstOrNull { it.id == selected }?.name ?: names.firstOrNull()
+        return listOf(
+            app.ghostly.core.mihomo.ProxyGroupInfo(app.ghostly.core.mihomo.MihomoConfigBuilder.MAIN_GROUP, "Selector", now, listOf(auto, fallback) + names, delays, setOf(auto, fallback)),
+            app.ghostly.core.mihomo.ProxyGroupInfo(auto, "URLTest", null, names, delays, emptySet()),
+            app.ghostly.core.mihomo.ProxyGroupInfo(fallback, "Fallback", null, names, delays, emptySet()),
+        )
     }
 
     fun toggleFavorite(serverId: String) {
@@ -448,22 +550,53 @@ class GhostlyController(
         pingServers(servers)
     }
 
-    fun ping(serverId: String) = server(serverId)?.let { pingServers(listOf(it)) }
+    fun ping(serverId: String) {
+        server(serverId)?.let { pingServers(listOf(it)) }
+    }
+
+    private val _groupsPinging = MutableStateFlow<Set<String>>(emptySet())
+    /** Selector groups being tested before the core runs (the live core reports its own, see [MihomoGroups.testing]). */
+    val groupsPinging: StateFlow<Set<String>> = _groupsPinging.asStateFlow()
+
+    /**
+     * The ping button of a selector group. With the core running it asks the core to test the group;
+     * without it the group's servers (through nested groups too) are pinged like any other server —
+     * on Android that briefly loads a ping-only core, so the delays are real ones, not handshakes.
+     */
+    fun testGroup(group: String) {
+        if (mihomoGroups.groups.value.isNotEmpty()) {
+            mihomoGroups.test(group)
+            return
+        }
+        if (group in _groupsPinging.value) return
+        val profile = groupOwner(group) ?: return
+        val defs = profile.mihomo?.let { app.ghostly.core.mihomo.MihomoProfiles.groups(it) }.orEmpty()
+        val listed = staticMihomoGroups.value.associate { it.name to it.members }
+        val names = HashSet<String>()
+        val seen = HashSet<String>()
+        fun walk(g: String) {
+            if (!seen.add(g)) return
+            (defs[g]?.members ?: listed[g]).orEmpty().forEach { m -> if (m in defs || m in listed) walk(m) else names += m }
+        }
+        walk(group)
+        val job = pingServers(profile.servers.filter { it.name in names }) ?: return
+        _groupsPinging.update { it + group }
+        job.invokeOnCompletion { _groupsPinging.update { it - group } }
+    }
 
     /**
      * Two phases: an instant TCP handshake to every server (results in ~100 ms, marked quick),
      * then the real round-trip through the core, batched by the backend.
      */
-    private fun pingServers(servers: List<Server>) {
+    private fun pingServers(servers: List<Server>): kotlinx.coroutines.Job? {
         val targets = servers.filter { !it.isAuto && it.id !in _pinging.value }
-        if (targets.isEmpty()) return
+        if (targets.isEmpty()) return null
         _pinging.update { it + targets.map { s -> s.id } }
         val method = _settings.value.pingMethod
         if (method == app.ghostly.core.model.PingMethod.TCP || method == app.ghostly.core.model.PingMethod.ICMP) {
-            scope.launch(Dispatchers.IO) { pingDirect(targets, method) }
-            return
+            return scope.launch(Dispatchers.IO) { pingDirect(targets, method) }
         }
-        scope.launch(Dispatchers.IO) {
+        return scope.launch(Dispatchers.IO) {
             val gate = Semaphore(24)
             targets.filter { it.protocol != "hysteria" && it.host != null && it.port > 0 }.map { s ->
                 async {
@@ -807,8 +940,8 @@ class GhostlyController(
         autoUpdateSubs = true, autoConnect = false, startOnBoot = false, pingUrl = "",
     )
 
-    fun haptic() {
-        if (_settings.value.haptics) platform.haptic()
+    fun haptic(kind: app.ghostly.core.vpn.Haptic = app.ghostly.core.vpn.Haptic.CLICK) {
+        if (_settings.value.haptics) platform.haptic(kind)
     }
 
     fun markOnboarded() {

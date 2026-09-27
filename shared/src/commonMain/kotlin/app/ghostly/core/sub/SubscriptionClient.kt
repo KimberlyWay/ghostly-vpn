@@ -40,9 +40,13 @@ class SubscriptionClient(private val platform: PlatformInfo) {
         return newClient(port).also { tunneled = port to it }
     }
 
-    /** User-Agent providers match on; "ghostly" gets the full Xray-JSON format from Ghostly servers. */
+    /**
+     * User-Agent providers match on. "Happ/…" first: Remnawave-style panels serve the full Xray-JSON
+     * subscription (balancers, routing) only to clients they know can play it, and they know Happ;
+     * we accept the same format. "ghostly" stays for Ghostly's own servers.
+     */
     val userAgent: String
-        get() = "GhostlyVPN/${platform.appVersion} (${platform.os} ${platform.osVersion}; ${platform.deviceModel})"
+        get() = "Happ/2.0.0 GhostlyVPN/${platform.appVersion} (${platform.os} ${platform.osVersion}; ${platform.deviceModel})"
 
     /** For mihomo: providers match "clash"/"mihomo" in the User-Agent and send a Clash YAML with proxy groups. */
     val mihomoUserAgent: String

@@ -208,6 +208,19 @@ private val FLAGS: Map<String, FlagPainter> = mapOf(
         for (i in 0 until 13) drawRect(Color(if (i % 2 == 0) 0xFFB22234 else 0xFFFFFFFF), Offset(0f, stripe * i), Size(size.width, stripe + 1f))
         drawRect(Color(0xFF3C3B6E), size = Size(size.width * 0.42f, stripe * 7))
     },
+    // Not a country, but subscriptions use 🇪🇺 for European pools.
+    "EU" to {
+        drawRect(Color(0xFF003399))
+        val r = size.height * 0.30f
+        val dot = size.height * 0.06f
+        for (i in 0 until 12) {
+            val a = (i * 30 - 90) * (kotlin.math.PI / 180.0)
+            drawCircle(
+                Color(0xFFFFCC00), dot,
+                center + Offset((r * kotlin.math.cos(a)).toFloat(), (r * kotlin.math.sin(a)).toFloat()),
+            )
+        }
+    },
     "GB" to {
         drawRect(Color(0xFF012169))
         val w = size.width
